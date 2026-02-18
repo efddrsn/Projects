@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChatGPT History Export</title>
+<title>ChatGPT History Exporter</title>
 <style>
   :root {
     --bg: #1e1e2e; --surface: #181825; --overlay: #313244;
@@ -17,10 +17,10 @@
     display: flex; flex-direction: column; align-items: center; padding: 40px 20px;
   }
   h1 { font-size: 32px; color: var(--accent); margin-bottom: 8px; }
-  .subtitle { color: var(--subtext); font-size: 16px; margin-bottom: 36px; }
+  .subtitle { color: var(--subtext); font-size: 16px; margin-bottom: 36px; text-align: center; max-width: 900px; }
   .card {
     background: var(--surface); border: 1px solid var(--overlay); border-radius: 16px;
-    padding: 28px 32px; max-width: 720px; width: 100%; margin-bottom: 24px;
+    padding: 28px 32px; max-width: 860px; width: 100%; margin-bottom: 24px;
   }
   .card h2 { font-size: 18px; color: var(--accent); margin-bottom: 14px; }
   .steps { list-style: none; counter-reset: step; }
@@ -64,88 +64,96 @@
     padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 14px;
     font-size: 13px; color: var(--subtext); line-height: 1.5;
   }
+  .warn {
+    background: rgba(243,139,168,0.08); border-left: 3px solid var(--red);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 14px;
+    font-size: 13px; color: var(--subtext); line-height: 1.5;
+  }
   .features { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
   .feature {
     display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--subtext);
   }
   .feature .check { color: var(--green); font-weight: 700; flex-shrink: 0; }
-  footer { margin-top: 40px; color: #585b70; font-size: 12px; }
+  .script-url {
+    margin-top: 10px; font-size: 12px; color: var(--subtext); word-break: break-all;
+  }
+  footer { margin-top: 40px; color: #585b70; font-size: 12px; text-align: center; max-width: 860px; }
 </style>
 </head>
 <body>
 
-<h1>ChatGPT History Export</h1>
-<p class="subtitle">Export your entire ChatGPT conversation history with timestamps. No API key needed.</p>
+<h1>ChatGPT History Exporter</h1>
+<p class="subtitle">
+  Export and continuously sync your ChatGPT history with resumable storage, progress coverage, and optional cloud uploads.
+</p>
 
 <div class="card">
-  <h2>Features</h2>
+  <h2>What this version does</h2>
   <div class="features">
-    <div class="feature"><span class="check">&#10003;</span> Full conversation history with timestamps</div>
-    <div class="feature"><span class="check">&#10003;</span> Export as JSON or Markdown</div>
-    <div class="feature"><span class="check">&#10003;</span> Limit to last N conversations</div>
-    <div class="feature"><span class="check">&#10003;</span> Filter: only multi-message chats</div>
-    <div class="feature"><span class="check">&#10003;</span> Cancel anytime with progress tracking</div>
-    <div class="feature"><span class="check">&#10003;</span> No API keys or extensions required</div>
+    <div class="feature"><span class="check">&#10003;</span> Manual mode (user initiated) and Auto-sync mode</div>
+    <div class="feature"><span class="check">&#10003;</span> Coverage metric: % synced + date covered back to</div>
+    <div class="feature"><span class="check">&#10003;</span> Incremental sync while you keep using ChatGPT</div>
+    <div class="feature"><span class="check">&#10003;</span> Resume-safe local IndexedDB storage checkpoints</div>
+    <div class="feature"><span class="check">&#10003;</span> Duplicate protection (skips chats already up-to-date)</div>
+    <div class="feature"><span class="check">&#10003;</span> Optional cloud endpoint uploads with retry queue</div>
+    <div class="feature"><span class="check">&#10003;</span> Params: limit last N, backfill date boundary, multi-message filter</div>
+    <div class="feature"><span class="check">&#10003;</span> Download snapshots as JSON/Markdown any time</div>
   </div>
 </div>
 
 <div class="card">
   <h2>How to use</h2>
   <ol class="steps">
-    <li>Open <a href="https://chatgpt.com" target="_blank" style="color:var(--blue)">chatgpt.com</a> and make sure you are logged in.</li>
-    <li>Open the browser Developer Console:
+    <li>Open <a href="https://chatgpt.com" target="_blank" style="color:var(--blue)">chatgpt.com</a> and log in.</li>
+    <li>Open browser DevTools Console:
       <br><kbd>F12</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> (Windows/Linux)
       <br><kbd>Cmd</kbd>+<kbd>Option</kbd>+<kbd>J</kbd> (Mac)
     </li>
-    <li>Click <strong>"Copy Export Script"</strong> below to copy the script to your clipboard.</li>
-    <li>Paste it into the console and press <kbd>Enter</kbd>.
-      <br><span style="color:var(--subtext);font-size:13px">Chrome may ask you to type <code>allow pasting</code> first.</span>
+    <li>Click <strong>"Copy Full Export Script"</strong> below, paste into console, press <kbd>Enter</kbd>.</li>
+    <li>In the panel, choose:
+      <br>- <strong>User initiated mode</strong> for one-off sync/export
+      <br>- <strong>Auto mode</strong> to keep syncing while the tab is open
     </li>
-    <li>A floating panel appears with export options. Click <strong>Export All</strong>.</li>
-    <li>Your file downloads automatically when complete.</li>
+    <li>Set your preset params (limit/date/filter), storage target (local/cloud), and run.</li>
   </ol>
 
   <div class="btn-group">
-    <button class="btn-primary" id="copyBtn">Copy Export Script</button>
-    <button class="btn-secondary" id="copyMinBtn">Copy Minified (bookmarklet-friendly)</button>
+    <button class="btn-primary" id="copyBtn">Copy Full Export Script</button>
+    <button class="btn-secondary" id="copyLoaderBtn">Copy Short Loader (console)</button>
   </div>
 
   <div class="note">
-    <strong>Tip for large histories:</strong> If you have thousands of conversations, enable
-    "Limit to last N chats" in the export panel to avoid very long downloads.
-    You can always run the export again for the next batch.
+    <strong>Short loader:</strong> this is useful when you want a compact snippet in your notes.
+    Paste it in the console and it will fetch the full script from this page origin.
   </div>
+  <div class="script-url">Script URL: <span id="scriptUrl"></span></div>
 </div>
 
 <div class="card">
-  <h2>Bookmarklet (alternative)</h2>
-  <p style="font-size:14px;color:var(--subtext);margin-bottom:12px;">
-    Drag this link to your bookmarks bar. Click it anytime you are on chatgpt.com:
-  </p>
-  <p>
-    <a id="bookmarklet" href="#" style="
-      display:inline-block; background:var(--accent); color:var(--bg);
-      padding: 10px 20px; border-radius:8px; text-decoration:none;
-      font-weight:600; font-size:14px;
-    ">ChatGPT Export</a>
-  </p>
-  <div class="note" style="margin-top:12px">
-    Some browsers block bookmarklets on certain pages. If it doesn't work, use the console method above.
+  <h2>Bookmarklet / favorites link status</h2>
+  <div class="warn">
+    <strong>Known limitation:</strong> chatgpt.com is protected by Cloudflare and often blocks
+    <code>javascript:</code> bookmarklets/favorites links. Use the Console method above.
   </div>
 </div>
 
 <div id="toast" class="toast">Copied to clipboard!</div>
 
-<footer>No data is sent anywhere. Everything runs locally in your browser.</footer>
+<footer>
+  By default, data is stored only in your local browser (IndexedDB). Data leaves your browser only if you explicitly configure a cloud endpoint in the exporter panel.
+</footer>
 
 <script>
 (function() {
   let cachedScript = null;
+  const scriptUrl = new URL("chatgpt-export.js", window.location.href).href;
+
+  document.getElementById("scriptUrl").textContent = scriptUrl;
 
   async function loadScript() {
     if (cachedScript) return cachedScript;
     try {
-      const res = await fetch("chatgpt-export.js");
+      const res = await fetch(scriptUrl, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       cachedScript = await res.text();
     } catch {
@@ -158,45 +166,37 @@
     const t = document.getElementById("toast");
     t.textContent = msg || "Copied to clipboard!";
     t.classList.add("show");
-    setTimeout(() => t.classList.remove("show"), 2000);
+    setTimeout(() => t.classList.remove("show"), 2200);
+  }
+
+  async function copyTextWithFallback(text, successMsg) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(successMsg);
+    } catch {
+      const w = window.open("", "_blank");
+      w.document.write("<pre>" + text.replace(/</g, "&lt;") + "</pre>");
+      showToast("Clipboard blocked - opened in new tab");
+    }
+  }
+
+  function buildShortLoader() {
+    const urlLiteral = JSON.stringify(scriptUrl);
+    return `(async()=>{const u=${urlLiteral}+"?t="+Date.now();const r=await fetch(u,{cache:"no-store"});if(!r.ok)throw new Error("Exporter load failed: HTTP "+r.status);(0,eval)(await r.text());})();`;
   }
 
   document.getElementById("copyBtn").addEventListener("click", async () => {
     const script = await loadScript();
     if (!script) {
-      showToast("Open chatgpt-export.js in a text editor and copy manually");
+      showToast("Could not load script - copy manually from chatgpt-export.js");
       return;
     }
-    try {
-      await navigator.clipboard.writeText(script);
-      showToast("Export script copied!");
-    } catch {
-      const w = window.open("", "_blank");
-      w.document.write("<pre>" + script.replace(/</g, "&lt;") + "</pre>");
-      showToast("Clipboard blocked – script opened in new tab, copy from there");
-    }
+    await copyTextWithFallback(script, "Full export script copied!");
   });
 
-  document.getElementById("copyMinBtn").addEventListener("click", async () => {
-    const script = await loadScript();
-    if (!script) {
-      showToast("Open chatgpt-export.js in a text editor and copy manually");
-      return;
-    }
-    try {
-      const minified = script.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, " ").trim();
-      await navigator.clipboard.writeText(minified);
-      showToast("Minified script copied!");
-    } catch {
-      showToast("Clipboard blocked – use the full Copy button instead");
-    }
-  });
-
-  // Build bookmarklet href
-  loadScript().then(script => {
-    if (!script) return;
-    const mini = script.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, " ").trim();
-    document.getElementById("bookmarklet").href = "javascript:" + encodeURIComponent(mini);
+  document.getElementById("copyLoaderBtn").addEventListener("click", async () => {
+    const loader = buildShortLoader();
+    await copyTextWithFallback(loader, "Short loader copied!");
   });
 })();
 </script>
