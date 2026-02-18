@@ -350,8 +350,10 @@
       abortController.abort();
       abortController = null;
     }
-    document.getElementById("cge-cancel").style.display = "none";
-    document.getElementById("cge-start").style.display = "";
+    const cancelBtn = document.getElementById("cge-cancel");
+    const startBtn = document.getElementById("cge-start");
+    if (cancelBtn) cancelBtn.style.display = "none";
+    if (startBtn) startBtn.style.display = "";
     setStatus("Cancelled.");
   }
 
@@ -383,11 +385,20 @@
       setStatus(`Found ${metas.length} conversation(s). Downloading details…`);
       const allConversations = [];
       let skipped = 0;
+      const exportStart = Date.now();
 
       for (let i = 0; i < metas.length; i++) {
         if (abortController.signal.aborted) throw new Error("Export cancelled.");
         setProgress(i + 1, metas.length);
-        setStatus(`Downloading ${i + 1}/${metas.length}: ${metas[i].title || "Untitled"}…`);
+
+        let eta = "";
+        if (i > 2) {
+          const elapsed = Date.now() - exportStart;
+          const perItem = elapsed / i;
+          const remaining = Math.round((perItem * (metas.length - i)) / 1000);
+          eta = remaining > 5 ? ` (~${remaining}s left)` : "";
+        }
+        setStatus(`Downloading ${i + 1}/${metas.length}: ${metas[i].title || "Untitled"}${eta}`);
 
         let conv;
         try {
@@ -454,11 +465,26 @@
         console.error("[ChatGPT Export]", err);
       }
     } finally {
-      document.getElementById("cge-cancel").style.display = "none";
-      document.getElementById("cge-start").style.display = "";
+      const cancelBtn = document.getElementById("cge-cancel");
+      const startBtn = document.getElementById("cge-start");
+      if (cancelBtn) cancelBtn.style.display = "none";
+      if (startBtn) startBtn.style.display = "";
+    }
+  }
+
+  // ── Pre-flight: show total conversation count ──────────────────────
+  async function preflight() {
+    try {
+      await getAccessToken();
+      const data = await apiFetch("/backend-api/conversations?offset=0&limit=1&order=updated");
+      const total = data.total ?? data.items?.length ?? "?";
+      setStatus(`Ready. You have ${total} conversation(s). Pick options and click Export All.`);
+    } catch {
+      setStatus("Ready. Log in to ChatGPT first, then click Export All.");
     }
   }
 
   // ── Launch ─────────────────────────────────────────────────────────
   buildUI();
+  preflight();
 })();

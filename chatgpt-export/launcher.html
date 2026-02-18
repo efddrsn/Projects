@@ -138,12 +138,21 @@
 
 <footer>No data is sent anywhere. Everything runs locally in your browser.</footer>
 
-<script id="export-script" type="text/plain">SCRIPT_PLACEHOLDER</script>
-
 <script>
 (function() {
-  // Load the export script from the JS file embedded at build time, or inline it
-  const SCRIPT = document.getElementById("export-script").textContent.trim();
+  let cachedScript = null;
+
+  async function loadScript() {
+    if (cachedScript) return cachedScript;
+    try {
+      const res = await fetch("chatgpt-export.js");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      cachedScript = await res.text();
+    } catch {
+      cachedScript = null;
+    }
+    return cachedScript;
+  }
 
   function showToast(msg) {
     const t = document.getElementById("toast");
@@ -153,40 +162,42 @@
   }
 
   document.getElementById("copyBtn").addEventListener("click", async () => {
+    const script = await loadScript();
+    if (!script) {
+      showToast("Open chatgpt-export.js in a text editor and copy manually");
+      return;
+    }
     try {
-      const res = await fetch("chatgpt-export.js");
-      const script = await res.text();
       await navigator.clipboard.writeText(script);
       showToast("Export script copied!");
     } catch {
-      showToast("Failed to copy – open chatgpt-export.js manually");
+      const w = window.open("", "_blank");
+      w.document.write("<pre>" + script.replace(/</g, "&lt;") + "</pre>");
+      showToast("Clipboard blocked – script opened in new tab, copy from there");
     }
   });
 
   document.getElementById("copyMinBtn").addEventListener("click", async () => {
+    const script = await loadScript();
+    if (!script) {
+      showToast("Open chatgpt-export.js in a text editor and copy manually");
+      return;
+    }
     try {
-      const res = await fetch("chatgpt-export.js");
-      const script = await res.text();
       const minified = script.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, " ").trim();
       await navigator.clipboard.writeText(minified);
       showToast("Minified script copied!");
     } catch {
-      showToast("Failed to copy – open chatgpt-export.js manually");
+      showToast("Clipboard blocked – use the full Copy button instead");
     }
   });
 
   // Build bookmarklet href
-  (async function() {
-    try {
-      const res = await fetch("chatgpt-export.js");
-      const script = await res.text();
-      const mini = script.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, " ").trim();
-      document.getElementById("bookmarklet").href = "javascript:" + encodeURIComponent(mini);
-    } catch {
-      document.getElementById("bookmarklet").href = "#";
-      document.getElementById("bookmarklet").title = "Could not build bookmarklet – use Copy instead";
-    }
-  })();
+  loadScript().then(script => {
+    if (!script) return;
+    const mini = script.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, " ").trim();
+    document.getElementById("bookmarklet").href = "javascript:" + encodeURIComponent(mini);
+  });
 })();
 </script>
 </body>
