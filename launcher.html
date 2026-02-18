@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChatGPT History Export</title>
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #181825; --overlay: #313244;
+    --text: #cdd6f4; --subtext: #a6adc8; --accent: #cba6f7;
+    --green: #a6e3a1; --red: #f38ba8; --blue: #89b4fa;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 40px 20px;
+  }
+  h1 { font-size: 32px; color: var(--accent); margin-bottom: 8px; }
+  .subtitle { color: var(--subtext); font-size: 16px; margin-bottom: 36px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--overlay); border-radius: 16px;
+    padding: 28px 32px; max-width: 720px; width: 100%; margin-bottom: 24px;
+  }
+  .card h2 { font-size: 18px; color: var(--accent); margin-bottom: 14px; }
+  .steps { list-style: none; counter-reset: step; }
+  .steps li {
+    counter-increment: step; padding: 10px 0 10px 44px; position: relative;
+    font-size: 15px; line-height: 1.6; border-left: 2px solid var(--overlay); margin-left: 14px;
+  }
+  .steps li:last-child { border-left-color: transparent; }
+  .steps li::before {
+    content: counter(step); position: absolute; left: -14px; top: 8px;
+    width: 28px; height: 28px; background: var(--accent); color: var(--bg);
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px;
+  }
+  code {
+    background: var(--overlay); padding: 2px 6px; border-radius: 4px;
+    font-size: 13px; font-family: "SF Mono", "Fira Code", monospace;
+  }
+  kbd {
+    background: var(--overlay); border: 1px solid #45475a; padding: 2px 7px;
+    border-radius: 4px; font-size: 12px; font-family: inherit;
+  }
+  .btn-group { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+  button {
+    padding: 12px 24px; border: none; border-radius: 10px; cursor: pointer;
+    font-size: 15px; font-weight: 600; transition: all 0.2s;
+  }
+  .btn-primary { background: var(--accent); color: var(--bg); }
+  .btn-primary:hover { background: var(--blue); }
+  .btn-secondary { background: var(--overlay); color: var(--text); }
+  .btn-secondary:hover { background: #45475a; }
+  .toast {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    background: var(--green); color: var(--bg); padding: 12px 28px;
+    border-radius: 10px; font-weight: 600; font-size: 14px; opacity: 0;
+    transition: opacity 0.3s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .note {
+    background: rgba(137,180,250,0.08); border-left: 3px solid var(--blue);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 14px;
+    font-size: 13px; color: var(--subtext); line-height: 1.5;
+  }
+  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .feature {
+    display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--subtext);
+  }
+  .feature .check { color: var(--green); font-weight: 700; flex-shrink: 0; }
+  footer { margin-top: 40px; color: #585b70; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>ChatGPT History Export</h1>
+<p class="subtitle">Export your entire ChatGPT conversation history with timestamps. No API key needed.</p>
+
+<div class="card">
+  <h2>Features</h2>
+  <div class="features">
+    <div class="feature"><span class="check">&#10003;</span> Full conversation history with timestamps</div>
+    <div class="feature"><span class="check">&#10003;</span> Export as JSON or Markdown</div>
+    <div class="feature"><span class="check">&#10003;</span> Limit to last N conversations</div>
+    <div class="feature"><span class="check">&#10003;</span> Filter: only multi-message chats</div>
+    <div class="feature"><span class="check">&#10003;</span> Cancel anytime with progress tracking</div>
+    <div class="feature"><span class="check">&#10003;</span> No API keys or extensions required</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>How to use</h2>
+  <ol class="steps">
+    <li>Open <a href="https://chatgpt.com" target="_blank" style="color:var(--blue)">chatgpt.com</a> and make sure you are logged in.</li>
+    <li>Open the browser Developer Console:
+      <br><kbd>F12</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> (Windows/Linux)
+      <br><kbd>Cmd</kbd>+<kbd>Option</kbd>+<kbd>J</kbd> (Mac)
+    </li>
+    <li>Click <strong>"Copy Export Script"</strong> below to copy the script to your clipboard.</li>
+    <li>Paste it into the console and press <kbd>Enter</kbd>.
+      <br><span style="color:var(--subtext);font-size:13px">Chrome may ask you to type <code>allow pasting</code> first.</span>
+    </li>
+    <li>A floating panel appears with export options. Click <strong>Export All</strong>.</li>
+    <li>Your file downloads automatically when complete.</li>
+  </ol>
+
+  <div class="btn-group">
+    <button class="btn-primary" id="copyBtn">Copy Export Script</button>
+    <button class="btn-secondary" id="copyMinBtn">Copy Minified (bookmarklet-friendly)</button>
+  </div>
+
+  <div class="note">
+    <strong>Tip for large histories:</strong> If you have thousands of conversations, enable
+    "Limit to last N chats" in the export panel to avoid very long downloads.
+    You can always run the export again for the next batch.
+  </div>
+</div>
+
+<div class="card">
+  <h2>Bookmarklet (alternative)</h2>
+  <p style="font-size:14px;color:var(--subtext);margin-bottom:12px;">
+    Drag this link to your bookmarks bar. Click it anytime you are on chatgpt.com:
+  </p>
+  <p>
+    <a id="bookmarklet" href="#" style="
+      display:inline-block; background:var(--accent); color:var(--bg);
+      padding: 10px 20px; border-radius:8px; text-decoration:none;
+      font-weight:600; font-size:14px;
+    ">ChatGPT Export</a>
+  </p>
+  <div class="note" style="margin-top:12px">
+    Some browsers block bookmarklets on certain pages. If it doesn't work, use the console method above.
+  </div>
+</div>
+
+<div id="toast" class="toast">Copied to clipboard!</div>
+
+<footer>No data is sent anywhere. Everything runs locally in your browser.</footer>
+
+<script>
+(function() {
+  let cachedScript = null;
+
+  async function loadScript() {
+    if (cachedScript) return cachedScript;
+    try {
+      const res = await fetch("chatgpt-export.js");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      cachedScript = await res.text();
+    } catch {
+      cachedScript = null;
+    }
+    return cachedScript;
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg || "Copied to clipboard!";
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 2000);
+  }
+
+  document.getElementById("copyBtn").addEventListener("click", async () => {
+    const script = await loadScript();
+    if (!script) {
+      showToast("Open chatgpt-export.js in a text editor and copy manually");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(script);
+      showToast("Export script copied!");
+    } catch {
+      const w = window.open("", "_blank");
+      w.document.write("<pre>" + script.replace(/</g, "&lt;") + "</pre>");
+      showToast("Clipboard blocked – script opened in new tab, copy from there");
+    }
+  });
+
+  document.getElementById("copyMinBtn").addEventListener("click", async () => {
+    const script = await loadScript();
+    if (!script) {
+      showToast("Open chatgpt-export.js in a text editor and copy manually");
+      return;
+    }
+    try {
+      const minified = script.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, " ").trim();
+      await navigator.clipboard.writeText(minified);
+      showToast("Minified script copied!");
+    } catch {
+      showToast("Clipboard blocked – use the full Copy button instead");
+    }
+  });
+
+  // Build bookmarklet href
+  loadScript().then(script => {
+    if (!script) return;
+    const mini = script.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, " ").trim();
+    document.getElementById("bookmarklet").href = "javascript:" + encodeURIComponent(mini);
+  });
+})();
+</script>
+</body>
+</html>
