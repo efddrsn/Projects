@@ -84,25 +84,38 @@
 
 <h1>ChatGPT History Exporter</h1>
 <p class="subtitle">
-  Export and continuously sync your ChatGPT history with resumable storage, progress coverage, and optional cloud uploads.
+  Auto-activate and continuously sync your ChatGPT history every time you open the site. Resumable storage, progress coverage, and optional cloud uploads.
 </p>
 
 <div class="card">
   <h2>What this version does</h2>
   <div class="features">
-    <div class="feature"><span class="check">&#10003;</span> Manual mode (user initiated) and Auto-sync mode</div>
+    <div class="feature"><span class="check">&#10003;</span> Auto-activates on page load via Tampermonkey/Greasemonkey</div>
+    <div class="feature"><span class="check">&#10003;</span> Unobtrusive floating badge with live sync status</div>
     <div class="feature"><span class="check">&#10003;</span> Coverage metric: % synced + date covered back to</div>
     <div class="feature"><span class="check">&#10003;</span> Incremental sync while you keep using ChatGPT</div>
     <div class="feature"><span class="check">&#10003;</span> Resume-safe local IndexedDB storage checkpoints</div>
     <div class="feature"><span class="check">&#10003;</span> Duplicate protection (skips chats already up-to-date)</div>
     <div class="feature"><span class="check">&#10003;</span> Optional cloud endpoint uploads with retry queue</div>
-    <div class="feature"><span class="check">&#10003;</span> Params: limit last N, backfill date boundary, multi-message filter</div>
     <div class="feature"><span class="check">&#10003;</span> Download snapshots as JSON/Markdown any time</div>
   </div>
 </div>
 
 <div class="card">
-  <h2>How to use</h2>
+  <h2>Recommended: Install as Userscript (always-on)</h2>
+  <ol class="steps">
+    <li>Install <a href="https://www.tampermonkey.net/" target="_blank" style="color:var(--blue)">Tampermonkey</a> (Chrome/Edge/Firefox) or <a href="https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/" target="_blank" style="color:var(--blue)">Greasemonkey</a> (Firefox).</li>
+    <li>Click <strong>"Copy Full Export Script"</strong> below.</li>
+    <li>In Tampermonkey, go to <strong>Dashboard &rarr; + (new script)</strong>, clear the template, paste the copied code, and save (<kbd>Ctrl</kbd>+<kbd>S</kbd>).</li>
+    <li>Open <a href="https://chatgpt.com" target="_blank" style="color:var(--blue)">chatgpt.com</a> &mdash; the exporter auto-activates and begins syncing in the background.</li>
+    <li>A small floating badge appears in the bottom-right corner showing live sync progress. Click it to open the full settings panel.</li>
+  </ol>
+
+  <div class="note">
+    <strong>That's it.</strong> Once installed, the exporter runs every time you open ChatGPT. No console, no bookmarklet &mdash; fully automatic. Settings persist in localStorage between sessions.
+  </div>
+
+  <h2 style="margin-top:24px;">Alternative: One-time Console Method</h2>
   <ol class="steps">
     <li>Open <a href="https://chatgpt.com" target="_blank" style="color:var(--blue)">chatgpt.com</a> and log in.</li>
     <li>Open browser DevTools Console:
@@ -110,11 +123,7 @@
       <br><kbd>Cmd</kbd>+<kbd>Option</kbd>+<kbd>J</kbd> (Mac)
     </li>
     <li>Click <strong>"Copy Full Export Script"</strong> below, paste into console, press <kbd>Enter</kbd>.</li>
-    <li>In the panel, choose:
-      <br>- <strong>User initiated mode</strong> for one-off sync/export
-      <br>- <strong>Auto mode</strong> to keep syncing while the tab is open
-    </li>
-    <li>Set your preset params (limit/date/filter), storage target (local/cloud), and run.</li>
+    <li>The exporter starts syncing immediately. Click the floating badge to adjust settings.</li>
   </ol>
 
   <div class="btn-group">
@@ -122,10 +131,6 @@
     <button class="btn-secondary" id="copyLoaderBtn">Copy Short Loader (console)</button>
   </div>
 
-  <div class="note">
-    <strong>Short loader:</strong> this is useful when you want a compact snippet in your notes.
-    Paste it in the console and it will fetch the full script from this page origin.
-  </div>
   <div class="script-url">Script URL: <span id="scriptUrl"></span></div>
 </div>
 
@@ -133,7 +138,7 @@
   <h2>Bookmarklet / favorites link status</h2>
   <div class="warn">
     <strong>Known limitation:</strong> chatgpt.com is protected by Cloudflare and often blocks
-    <code>javascript:</code> bookmarklets/favorites links. Use the Console method above.
+    <code>javascript:</code> bookmarklets/favorites links. Use the Tampermonkey method above for always-on activation.
   </div>
 </div>
 

@@ -1,5 +1,16 @@
+// ==UserScript==
+// @name         ChatGPT History Exporter
+// @namespace    chatgpt-history-exporter
+// @version      3.0.0
+// @description  Auto-activate and continuously export ChatGPT conversation history
+// @match        https://chatgpt.com/*
+// @match        https://chat.openai.com/*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+
 // ChatGPT History Exporter with Auto Sync + Resumable Storage
-// Run this script in the browser console on https://chatgpt.com
+// Runs automatically via userscript manager, or paste into browser console on https://chatgpt.com
 
 (async function ChatGPTExport() {
   "use strict";
@@ -17,7 +28,7 @@
     }
   }
 
-  const SCRIPT_VERSION = "2.0.0";
+  const SCRIPT_VERSION = "3.0.0";
   const CANCELLED_MESSAGE = "Export cancelled.";
   const BATCH_DELAY_MS = 350;
   const CONVERSATION_LIST_PAGE_SIZE = 100;
@@ -39,8 +50,8 @@
     minUpdateDate: "",
     multiMsgOnly: false,
     format: "json", // json | markdown | both
-    mode: "manual", // manual | auto
-    autoEnabled: false,
+    mode: "auto", // manual | auto
+    autoEnabled: true,
     autoIntervalSec: 180,
     autoBatchSize: 30,
     saveManualDownload: true,
@@ -72,6 +83,7 @@
   let coverageDateEl = null;
   let autoStateEl = null;
   let statsEl = null;
+  let badge = null;
 
   const settings = sanitizeSettings({ ...DEFAULT_SETTINGS, ...loadJSON(STORAGE_KEYS.settings, {}) });
   const runtime = sanitizeRuntime({ ...DEFAULT_RUNTIME, ...loadJSON(STORAGE_KEYS.runtime, {}) });
@@ -1031,6 +1043,7 @@
   // -------------------------
   function setStatus(text) {
     if (statusEl) statusEl.textContent = text;
+    updateBadge();
   }
 
   function setProgress(current, total) {
@@ -1063,6 +1076,7 @@
     } else {
       coverageDateEl.textContent = "Covered continuously from newest back to: not yet";
     }
+    updateBadge();
   }
 
   function updateStatsLine() {
@@ -1085,6 +1099,7 @@
     if (downloadBtn) downloadBtn.disabled = busy;
     if (autoToggleBtn) autoToggleBtn.disabled = busy;
     if (cancelBtn) cancelBtn.style.display = busy ? "" : "none";
+    updateBadge();
   }
 
   function readSettingsFromUI() {
@@ -1188,10 +1203,91 @@
     cancelCurrentRun();
     clearTimeout(autoTimer);
     autoTimer = null;
+    settings.autoEnabled = false;
+    persistSettings();
     panel?.remove();
     panel = null;
+    badge?.remove();
+    badge = null;
   }
 
+  // -------------------------
+  // floating badge (minimized indicator)
+  // -------------------------
+  function buildBadge() {
+    const existing = document.getElementById("cge-badge");
+    if (existing) existing.remove();
+
+    badge = document.createElement("div");
+    badge.id = "cge-badge";
+    badge.innerHTML = `
+      <style>
+        #cge-badge {
+          position: fixed; bottom: 20px; right: 20px; z-index: 999998;
+          background: #1e1e2e; border: 1px solid #313244; border-radius: 20px;
+          padding: 8px 14px; display: flex; align-items: center; gap: 8px;
+          cursor: pointer; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-size: 12px; color: #cdd6f4; box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+          transition: background 0.2s, transform 0.15s; user-select: none;
+        }
+        #cge-badge:hover { background: #313244; transform: translateY(-1px); }
+        #cge-badge .cge-dot {
+          width: 8px; height: 8px; border-radius: 50%; background: #a6adc8;
+          flex-shrink: 0; transition: background 0.3s;
+        }
+        #cge-badge .cge-dot.syncing { background: #f9e2af; animation: cge-pulse 1.2s infinite; }
+        #cge-badge .cge-dot.ok { background: #a6e3a1; }
+        #cge-badge .cge-dot.error { background: #f38ba8; }
+        @keyframes cge-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+      </style>
+      <span class="cge-dot" id="cge-badge-dot"></span>
+      <span id="cge-badge-label">Export</span>
+    `;
+    badge.addEventListener("click", showPanel);
+    document.body.appendChild(badge);
+  }
+
+  function updateBadge() {
+    const dot = document.getElementById("cge-badge-dot");
+    const label = document.getElementById("cge-badge-label");
+    if (!dot || !label) return;
+
+    dot.className = "cge-dot";
+    if (isRunning) {
+      dot.classList.add("syncing");
+    } else if (runtime.lastError) {
+      dot.classList.add("error");
+    } else if (runtime.lastSuccessfulRunAt) {
+      dot.classList.add("ok");
+    }
+
+    const cov = runtime.lastCoverage;
+    if (cov && cov.targetTotal) {
+      label.textContent = `${cov.percent.toFixed(0)}% synced`;
+    } else if (isRunning) {
+      label.textContent = "Syncing\u2026";
+    } else {
+      label.textContent = "Export";
+    }
+  }
+
+  function showPanel() {
+    if (!panel) buildUI();
+    panel.style.display = "";
+    if (badge) badge.style.display = "none";
+  }
+
+  function minimizePanel() {
+    if (panel) panel.style.display = "none";
+    if (badge) {
+      badge.style.display = "";
+      updateBadge();
+    }
+  }
+
+  // -------------------------
+  // settings panel
+  // -------------------------
   function buildUI() {
     const existing = document.getElementById("chatgpt-export-panel");
     if (existing) existing.remove();
@@ -1336,7 +1432,8 @@
           <button class="cge-secondary" id="cge-download-now">Download Snapshot Now</button>
           <button class="cge-secondary" id="cge-auto-toggle">Turn Auto ON</button>
           <button class="cge-danger" id="cge-cancel" style="display:none;">Cancel</button>
-          <button class="cge-secondary" id="cge-close2">Close</button>
+          <button class="cge-secondary" id="cge-minimize">Minimize</button>
+          <button class="cge-secondary" id="cge-close2">Close &amp; Stop</button>
         </div>
 
         <div class="cge-progress-outer"><div class="cge-progress-inner" id="cge-progress"></div></div>
@@ -1357,8 +1454,9 @@
     autoStateEl = document.getElementById("cge-auto-state");
     statsEl = document.getElementById("cge-stats");
 
-    document.getElementById("cge-close").addEventListener("click", closePanel);
+    document.getElementById("cge-close").addEventListener("click", minimizePanel);
     document.getElementById("cge-close2").addEventListener("click", closePanel);
+    document.getElementById("cge-minimize").addEventListener("click", minimizePanel);
     document.getElementById("cge-cancel").addEventListener("click", cancelCurrentRun);
 
     document.getElementById("cge-run-now").addEventListener("click", async () => {
@@ -1450,15 +1548,22 @@
       panel.remove();
       panel = null;
     }
+    if (badge) {
+      badge.remove();
+      badge = null;
+    }
     if (reason) {
       console.info(`[ChatGPT Export] destroyed (${reason}).`);
     }
   }
 
+  buildBadge();
   buildUI();
+  panel.style.display = "none";
   preflight();
+  updateBadge();
 
-  // Resume auto mode if user previously left it ON.
+  // Auto-activate: start syncing immediately on page load.
   if (settings.mode === "auto" && settings.autoEnabled) {
     startAutoSync().catch((err) => {
       console.error("[ChatGPT Export] failed to resume auto sync:", err);
@@ -1473,6 +1578,8 @@
     startAutoSync,
     stopAutoSync,
     runManualSync: () => runSyncCycle({ trigger: "external_call", isAuto: false }),
+    showPanel,
+    minimizePanel,
     destroy,
   };
 })();
