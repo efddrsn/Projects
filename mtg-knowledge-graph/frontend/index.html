@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MTG Knowledge Graph</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/layout-base@2.0.1/layout-base.js"></script>
+  <script src="https://unpkg.com/cose-base@2.2.0/cose-base.js"></script>
+  <script src="https://unpkg.com/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
+</head>
+<body>
+
+<header>
+  <h1><span>⬡</span> MTG Knowledge Graph</h1>
+  <span class="header-stats" id="headerStats">Loading…</span>
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="Search cards, types, keywords…" autocomplete="off">
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</header>
+
+<div class="main-container">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+
+    <div class="detail-panel" id="detailPanel">
+      <img class="card-image" id="detailImage" src="" alt="" style="display:none">
+      <h2 id="detailName"></h2>
+      <div class="meta" id="detailMeta"></div>
+      <div class="oracle-text" id="detailOracle" style="display:none"></div>
+      <div class="relations" id="detailRelations"></div>
+      <div class="btn-row">
+        <button class="btn" id="btnExplore">Explore neighborhood</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Filters</h3>
+      <div class="color-filters" id="colorFilters">
+        <div class="color-btn" data-color="W" title="White">W</div>
+        <div class="color-btn" data-color="U" title="Blue">U</div>
+        <div class="color-btn" data-color="B" title="Black">B</div>
+        <div class="color-btn" data-color="R" title="Red">R</div>
+        <div class="color-btn" data-color="G" title="Green">G</div>
+      </div>
+      <div class="filter-group">
+        <label>Card type</label>
+        <select id="filterType">
+          <option value="">All</option>
+          <option value="Creature">Creature</option>
+          <option value="Instant">Instant</option>
+          <option value="Sorcery">Sorcery</option>
+          <option value="Enchantment">Enchantment</option>
+          <option value="Artifact">Artifact</option>
+          <option value="Planeswalker">Planeswalker</option>
+          <option value="Land">Land</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Keyword</label>
+        <input type="text" id="filterKeyword" placeholder="e.g. Flying, Trample…">
+      </div>
+      <div class="filter-group">
+        <label>Subtype</label>
+        <input type="text" id="filterSubtype" placeholder="e.g. Elf, Wizard…">
+      </div>
+      <div class="filter-group">
+        <label>Format</label>
+        <select id="filterFormat">
+          <option value="">All</option>
+          <option value="standard">Standard</option>
+          <option value="modern">Modern</option>
+          <option value="pioneer">Pioneer</option>
+          <option value="legacy">Legacy</option>
+          <option value="vintage">Vintage</option>
+          <option value="commander">Commander</option>
+          <option value="pauper">Pauper</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" id="btnQuery">Apply filters</button>
+        <button class="btn" id="btnReset">Reset</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>View mode</h3>
+      <div class="filter-group">
+        <label>Show relationship</label>
+        <select id="viewRel">
+          <option value="">All relationships</option>
+          <option value="HAS_COLOR">Colors</option>
+          <option value="HAS_TYPE">Card types</option>
+          <option value="HAS_SUBTYPE">Subtypes</option>
+          <option value="HAS_KEYWORD">Keywords</option>
+          <option value="IN_SET">Sets</option>
+          <option value="SYNERGY">Synergies</option>
+          <option value="LEGAL_IN">Legalities</option>
+          <option value="PRODUCES_MANA">Mana production</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Show node type</label>
+        <select id="viewNodeType">
+          <option value="">All nodes</option>
+          <option value="Card">Cards</option>
+          <option value="Color">Colors</option>
+          <option value="CardType">Card Types</option>
+          <option value="Subtype">Subtypes</option>
+          <option value="Keyword">Keywords</option>
+          <option value="Set">Sets</option>
+          <option value="Format">Formats</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" id="btnView">Update view</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Path finder</h3>
+      <div class="path-finder">
+        <div class="filter-group">
+          <label>From node</label>
+          <input type="text" id="pathFrom" placeholder="Node ID or search…">
+        </div>
+        <div class="filter-group">
+          <label>To node</label>
+          <input type="text" id="pathTo" placeholder="Node ID or search…">
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="btn primary" id="btnPath">Find path</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Graph canvas -->
+  <div class="graph-container">
+    <div id="cy"></div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">Building knowledge graph…</div>
+    </div>
+
+    <div class="layout-picker">
+      <button class="btn" data-layout="fcose" title="Force-directed layout">Force</button>
+      <button class="btn" data-layout="circle" title="Circle layout">Circle</button>
+      <button class="btn" data-layout="concentric" title="Concentric layout">Rings</button>
+      <button class="btn" data-layout="grid" title="Grid layout">Grid</button>
+    </div>
+
+    <div class="graph-controls">
+      <button class="btn" id="btnZoomIn" title="Zoom in">+</button>
+      <button class="btn" id="btnZoomOut" title="Zoom out">−</button>
+      <button class="btn" id="btnFit" title="Fit graph">⤢</button>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Card</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f0c040"></div> Color</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Card Type</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div> Subtype</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> Keyword</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Set</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f778ba"></div> Format</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div> Other</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
