@@ -3,3 +3,4 @@ data/graph.json
 __pycache__/
 *.pyc
 .env
+# site/graph.json is committed (pre-built static asset)
