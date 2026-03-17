@@ -111,9 +111,9 @@ def build_graph(cards):
         })
 
         # Colors
-        for c in card.get("colors", []):
+        for c in (card.get("colors") or []):
             G.add_edge(f"card:{card_id}", f"color:{c}", rel="HAS_COLOR")
-        for c in card.get("color_identity", []):
+        for c in (card.get("color_identity") or []):
             G.add_edge(f"card:{card_id}", f"color:{c}", rel="HAS_COLOR_IDENTITY")
 
         # Type line
