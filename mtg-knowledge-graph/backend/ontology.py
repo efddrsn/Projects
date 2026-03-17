@@ -78,10 +78,10 @@ def _parse_type_line(type_line):
 
 def build_graph(cards):
     """Build a NetworkX knowledge graph from Scryfall card objects."""
-    G = nx.DiGraph()
+    G = nx.MultiDiGraph()
 
     for c in COLOR_MAP:
-        G.add_node(f"color:{c}", label=COLOR_MAP[c], node_type="Color", id=c)
+        G.add_node(f"color:{c}", label=COLOR_MAP[c], node_type="Color", code=c)
 
     for card in cards:
         card_id = card.get("oracle_id", card["id"])
@@ -236,15 +236,21 @@ def graph_to_cytoscape(G):
     """Convert NetworkX graph to Cytoscape.js JSON format."""
     elements = []
     for node_id, data in G.nodes(data=True):
+        safe = {k: v for k, v in data.items() if k != "id"}
         elements.append({
             "group": "nodes",
-            "data": {"id": node_id, **{k: v for k, v in data.items()}},
+            "data": {"id": node_id, **safe},
         })
+    edge_counter = {}
     for source, target, data in G.edges(data=True):
+        rel = data.get("rel", "")
+        base_id = f"{source}->{target}:{rel}"
+        edge_counter[base_id] = edge_counter.get(base_id, 0) + 1
+        eid = base_id if edge_counter[base_id] == 1 else f"{base_id}#{edge_counter[base_id]}"
         elements.append({
             "group": "edges",
             "data": {
-                "id": f"{source}->{target}:{data.get('rel', '')}",
+                "id": eid,
                 "source": source,
                 "target": target,
                 **{k: v for k, v in data.items()},

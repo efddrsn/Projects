@@ -56,7 +56,7 @@ def _ensure_data():
 
 
 def _rebuild_nx(elements):
-    G = nx.DiGraph()
+    G = nx.MultiDiGraph()
     for el in elements:
         if el["group"] == "nodes":
             d = dict(el["data"])
@@ -129,12 +129,18 @@ def api_node(node_id):
             "group": "nodes",
             "data": {"id": n, **dict(_graph.nodes[n])},
         })
+    seen_edges = set()
     for s, t, d in _graph.edges(data=True):
         if s in subgraph_nodes and t in subgraph_nodes:
+            rel = d.get("rel", "")
+            eid = f"{s}->{t}:{rel}"
+            if eid in seen_edges:
+                continue
+            seen_edges.add(eid)
             elements.append({
                 "group": "edges",
                 "data": {
-                    "id": f"{s}->{t}:{d.get('rel', '')}",
+                    "id": eid,
                     "source": s, "target": t, **dict(d),
                 },
             })
@@ -178,7 +184,7 @@ def api_query():
     first = True
 
     filters = {
-        "color": ("HAS_COLOR", lambda v: f"color:{v.upper()}"),
+        "color": ("HAS_COLOR_IDENTITY", lambda v: f"color:{v.upper()}"),
         "card_type": ("HAS_TYPE", lambda v: f"cardtype:{v.title()}"),
         "subtype": ("HAS_SUBTYPE", lambda v: f"subtype:{v.title()}"),
         "keyword": ("HAS_KEYWORD", lambda v: f"keyword:{v.title()}"),
@@ -251,7 +257,8 @@ def api_path():
         })
     for i in range(len(path) - 1):
         s, t = path[i], path[i + 1]
-        edge_data = _graph.get_edge_data(s, t) or _graph.get_edge_data(t, s) or {}
+        edge_dict = _graph.get_edge_data(s, t) or _graph.get_edge_data(t, s) or {}
+        edge_data = next(iter(edge_dict.values()), {}) if edge_dict else {}
         elements.append({
             "group": "edges",
             "data": {
