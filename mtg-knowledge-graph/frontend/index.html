@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>MTG Knowledge Graph</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
@@ -13,6 +13,7 @@
 <body>
 
 <header>
+  <button class="sidebar-toggle" id="sidebarToggle" title="Toggle sidebar">☰</button>
   <h1><span>⬡</span> MTG Knowledge Graph</h1>
   <span class="header-stats" id="headerStats">Loading…</span>
   <div class="search-box">
@@ -23,8 +24,10 @@
 
 <div class="main-container">
 
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
   <!-- Sidebar -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
 
     <div class="detail-panel" id="detailPanel">
       <img class="card-image" id="detailImage" src="" alt="" style="display:none">
@@ -39,6 +42,10 @@
 
     <div class="sidebar-section">
       <h3>Filters</h3>
+      <div class="local-mode-banner hidden" id="localModeBanner">
+        <span>Local view active</span>
+        <button class="btn btn-xs" id="btnExitLocal" title="Back to global view">✕ Exit</button>
+      </div>
       <div class="color-filters" id="colorFilters">
         <div class="color-btn" data-color="W" title="White">W</div>
         <div class="color-btn" data-color="U" title="Blue">U</div>
@@ -87,6 +94,18 @@
     </div>
 
     <div class="sidebar-section">
+      <h3>Connection intensity</h3>
+      <div class="filter-group">
+        <label>Minimum weight: <strong id="weightValue">1</strong></label>
+        <input type="range" id="weightSlider" min="1" max="10" step="0.5" value="1" class="range-slider">
+        <div class="range-labels">
+          <span>Weak</span>
+          <span>Strong</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
       <h3>View mode</h3>
       <div class="filter-group">
         <label>Show relationship</label>
@@ -96,6 +115,7 @@
           <option value="HAS_TYPE">Card types</option>
           <option value="HAS_SUBTYPE">Subtypes</option>
           <option value="HAS_KEYWORD">Keywords</option>
+          <option value="HAS_TRIGGER">Triggers</option>
           <option value="IN_SET">Sets</option>
           <option value="SYNERGY">Synergies</option>
           <option value="LEGAL_IN">Legalities</option>
@@ -111,6 +131,7 @@
           <option value="CardType">Card Types</option>
           <option value="Subtype">Subtypes</option>
           <option value="Keyword">Keywords</option>
+          <option value="Trigger">Triggers</option>
           <option value="Set">Sets</option>
           <option value="Format">Formats</option>
         </select>
@@ -161,15 +182,19 @@
       <button class="btn" id="btnFit" title="Fit graph">⤢</button>
     </div>
 
-    <div class="legend">
-      <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Card</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#f0c040"></div> Color</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Card Type</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div> Subtype</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> Keyword</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Set</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#f778ba"></div> Format</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div> Other</div>
+    <div class="legend" id="legend">
+      <div class="legend-toggle" id="legendToggle">Legend ▾</div>
+      <div class="legend-items" id="legendItems">
+        <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Card</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f0c040"></div> Color</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Card Type</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#bc8cff"></div> Subtype</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> Keyword</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Set</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f778ba"></div> Format</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#79c0ff"></div> Trigger</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div> Other</div>
+      </div>
     </div>
   </div>
 

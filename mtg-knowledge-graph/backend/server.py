@@ -96,11 +96,12 @@ def api_graph():
     _ensure_data()
     node_type = request.args.get("node_type")
     rel = request.args.get("rel")
+    min_weight = request.args.get("min_weight", type=float)
 
-    if not node_type and not rel:
+    if not node_type and not rel and min_weight is None:
         return jsonify(_elements)
 
-    filtered = _filter_elements(node_type, rel)
+    filtered = _filter_elements(node_type, rel, min_weight)
     return jsonify(filtered)
 
 
@@ -305,13 +306,16 @@ def api_refresh():
     return jsonify({"status": "ok", "stats": graph_stats(_graph)})
 
 
-def _filter_elements(node_type=None, rel=None):
+def _filter_elements(node_type=None, rel=None, min_weight=None):
     relevant_nodes = set()
     elements = []
 
     if rel:
         for s, t, d in _graph.edges(data=True):
             if d.get("rel") == rel:
+                w = d.get("weight", 1)
+                if min_weight is not None and w < min_weight:
+                    continue
                 relevant_nodes.add(s)
                 relevant_nodes.add(t)
                 elements.append({
@@ -331,6 +335,9 @@ def _filter_elements(node_type=None, rel=None):
             relevant_nodes = type_nodes
             for s, t, d in _graph.edges(data=True):
                 if s in relevant_nodes or t in relevant_nodes:
+                    w = d.get("weight", 1)
+                    if min_weight is not None and w < min_weight:
+                        continue
                     relevant_nodes.add(s)
                     relevant_nodes.add(t)
                     elements.append({
@@ -340,6 +347,20 @@ def _filter_elements(node_type=None, rel=None):
                             "source": s, "target": t, **dict(d),
                         },
                     })
+
+    if not rel and not node_type and min_weight is not None:
+        for s, t, d in _graph.edges(data=True):
+            w = d.get("weight", 1)
+            if w >= min_weight:
+                relevant_nodes.add(s)
+                relevant_nodes.add(t)
+                elements.append({
+                    "group": "edges",
+                    "data": {
+                        "id": f"{s}->{t}:{d.get('rel', '')}",
+                        "source": s, "target": t, **dict(d),
+                    },
+                })
 
     for n in relevant_nodes:
         elements.append({
