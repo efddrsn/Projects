@@ -468,6 +468,27 @@ header h1 span { color: var(--accent); }
   flex-shrink: 0;
 }
 
+.legend-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+
+.legend-pie-sample {
+  background: conic-gradient(
+    #f9faf4 0deg 72deg,
+    #0e68ab 72deg 144deg,
+    #150b00 144deg 216deg,
+    #d3202a 216deg 288deg,
+    #00733e 288deg 360deg
+  );
+  border: 1px solid #666;
+}
+
 /* ── Toast ─────────────────────────────────────────────── */
 
 .toast {

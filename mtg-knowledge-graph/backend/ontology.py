@@ -172,12 +172,15 @@ def build_graph(cards):
             if "image_uris" in face:
                 image = face["image_uris"].get("normal", face["image_uris"].get("small", ""))
 
+        color_identity = card.get("color_identity") or []
+
         G.add_node(f"card:{card_id}", **{
             "node_type": "Card",
             "label": name,
             "oracle_id": card_id,
             "mana_cost": card.get("mana_cost", ""),
             "cmc": card.get("cmc", 0),
+            "color_identity": ",".join(sorted(color_identity)),
             "oracle_text": card.get("oracle_text", ""),
             "power": card.get("power", ""),
             "toughness": card.get("toughness", ""),

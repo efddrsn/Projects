@@ -307,8 +307,8 @@ def api_refresh():
 
 
 def _filter_elements(node_type=None, rel=None, min_weight=None):
-    relevant_nodes = set()
-    elements = []
+    edge_elements = []
+    edge_node_ids = set()
 
     if rel:
         for s, t, d in _graph.edges(data=True):
@@ -316,9 +316,9 @@ def _filter_elements(node_type=None, rel=None, min_weight=None):
                 w = d.get("weight", 1)
                 if min_weight is not None and w < min_weight:
                     continue
-                relevant_nodes.add(s)
-                relevant_nodes.add(t)
-                elements.append({
+                edge_node_ids.add(s)
+                edge_node_ids.add(t)
+                edge_elements.append({
                     "group": "edges",
                     "data": {
                         "id": f"{s}->{t}:{d.get('rel', '')}",
@@ -329,18 +329,28 @@ def _filter_elements(node_type=None, rel=None, min_weight=None):
     if node_type:
         type_nodes = {n for n, d in _graph.nodes(data=True)
                       if d.get("node_type") == node_type}
-        if relevant_nodes:
-            relevant_nodes &= type_nodes
+        if rel:
+            anchor_nodes = edge_node_ids & type_nodes
+            keep_edges = []
+            keep_node_ids = set()
+            for e in edge_elements:
+                s, t = e["data"]["source"], e["data"]["target"]
+                if s in anchor_nodes or t in anchor_nodes:
+                    keep_edges.append(e)
+                    keep_node_ids.add(s)
+                    keep_node_ids.add(t)
+            edge_elements = keep_edges
+            edge_node_ids = keep_node_ids
         else:
-            relevant_nodes = type_nodes
+            edge_node_ids = set(type_nodes)
             for s, t, d in _graph.edges(data=True):
-                if s in relevant_nodes or t in relevant_nodes:
+                if s in edge_node_ids or t in edge_node_ids:
                     w = d.get("weight", 1)
                     if min_weight is not None and w < min_weight:
                         continue
-                    relevant_nodes.add(s)
-                    relevant_nodes.add(t)
-                    elements.append({
+                    edge_node_ids.add(s)
+                    edge_node_ids.add(t)
+                    edge_elements.append({
                         "group": "edges",
                         "data": {
                             "id": f"{s}->{t}:{d.get('rel', '')}",
@@ -352,9 +362,9 @@ def _filter_elements(node_type=None, rel=None, min_weight=None):
         for s, t, d in _graph.edges(data=True):
             w = d.get("weight", 1)
             if w >= min_weight:
-                relevant_nodes.add(s)
-                relevant_nodes.add(t)
-                elements.append({
+                edge_node_ids.add(s)
+                edge_node_ids.add(t)
+                edge_elements.append({
                     "group": "edges",
                     "data": {
                         "id": f"{s}->{t}:{d.get('rel', '')}",
@@ -362,11 +372,13 @@ def _filter_elements(node_type=None, rel=None, min_weight=None):
                     },
                 })
 
-    for n in relevant_nodes:
+    elements = []
+    for n in edge_node_ids:
         elements.append({
             "group": "nodes",
             "data": {"id": n, **dict(_graph.nodes[n])},
         })
+    elements.extend(edge_elements)
     return elements
 
 
