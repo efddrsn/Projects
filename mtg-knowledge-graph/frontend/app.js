@@ -5,7 +5,10 @@ let cy;
 let currentLayout = "fcose";
 let selectedNode = null;
 let localMode = false;
-let localElements = null; // stash of all elements in local/neighborhood view
+let localElements = null;
+let activeColors = new Set();
+let colorMode = "type";    // "type" = color by node_type, "identity" = color by mana color identity
+let nodeLabel = "name";    // "name", "mana_value", "power_toughness", "type", "none"
 
 const NODE_COLORS = {
   Card: "#58a6ff",
@@ -33,6 +36,14 @@ const NODE_SIZES = {
   ManaValue: 16,
   Format: 22,
   Trigger: 26,
+};
+
+const MANA_HEX = {
+  W: "#f9faf4",
+  U: "#0e68ab",
+  B: "#150b00",
+  R: "#d3202a",
+  G: "#00733e",
 };
 
 // ── Initialization ──────────────────────────────────────────────────────────
@@ -64,18 +75,32 @@ function cyStyle() {
     {
       selector: "node",
       style: {
-        label: "data(label)",
+        label: (el) => getNodeLabel(el),
         "font-size": 8,
-        "text-valign": "bottom",
-        "text-margin-y": 4,
-        color: "#8b949e",
-        "text-outline-width": 2,
+        "text-valign": "center",
+        "text-halign": "center",
+        "text-margin-y": 0,
+        color: (el) => getNodeLabelColor(el),
+        "text-outline-width": 0,
         "text-outline-color": "#0d1117",
-        "background-color": (el) => NODE_COLORS[el.data("node_type")] || "#8b949e",
+        "background-color": (el) => getNodeColor(el),
         width: (el) => NODE_SIZES[el.data("node_type")] || 18,
         height: (el) => NODE_SIZES[el.data("node_type")] || 18,
         "border-width": 0,
         "overlay-padding": 4,
+        "text-wrap": "ellipsis",
+        "text-max-width": (el) => (NODE_SIZES[el.data("node_type")] || 18) - 4 + "px",
+        "pie-size": "100%",
+        "pie-1-background-color": (el) => getPieColor(el, 0),
+        "pie-1-background-size": (el) => getPieSize(el, 0),
+        "pie-2-background-color": (el) => getPieColor(el, 1),
+        "pie-2-background-size": (el) => getPieSize(el, 1),
+        "pie-3-background-color": (el) => getPieColor(el, 2),
+        "pie-3-background-size": (el) => getPieSize(el, 2),
+        "pie-4-background-color": (el) => getPieColor(el, 3),
+        "pie-4-background-size": (el) => getPieSize(el, 3),
+        "pie-5-background-color": (el) => getPieColor(el, 4),
+        "pie-5-background-size": (el) => getPieSize(el, 4),
       },
     },
     {
@@ -183,6 +208,78 @@ function cyStyle() {
   ];
 }
 
+// ── Color Identity Helpers ──────────────────────────────────────────────────
+
+function getNodeColor(el) {
+  if (colorMode === "identity" && el.data("node_type") === "Card") {
+    const ci = el.data("color_identity");
+    if (!ci) return "#8b949e";
+    const colors = ci.split(",").filter(Boolean);
+    if (colors.length === 0) return "#8b949e";
+    if (colors.length === 1) return MANA_HEX[colors[0]] || "#8b949e";
+    return "transparent";
+  }
+  return NODE_COLORS[el.data("node_type")] || "#8b949e";
+}
+
+function getPieColor(el, index) {
+  if (colorMode !== "identity" || el.data("node_type") !== "Card") return "#000";
+  const ci = el.data("color_identity");
+  if (!ci) return "#000";
+  const colors = ci.split(",").filter(Boolean);
+  if (colors.length <= 1) return "#000";
+  if (index < colors.length) return MANA_HEX[colors[index]] || "#8b949e";
+  return "#000";
+}
+
+function getPieSize(el, index) {
+  if (colorMode !== "identity" || el.data("node_type") !== "Card") return 0;
+  const ci = el.data("color_identity");
+  if (!ci) return 0;
+  const colors = ci.split(",").filter(Boolean);
+  if (colors.length <= 1) return 0;
+  if (index < colors.length) return 100 / colors.length;
+  return 0;
+}
+
+function getNodeLabel(el) {
+  const nt = el.data("node_type");
+  if (nt !== "Card") return el.data("label") || "";
+
+  switch (nodeLabel) {
+    case "name":
+      return el.data("label") || "";
+    case "mana_value": {
+      const cmc = el.data("cmc");
+      return cmc != null ? String(Math.round(cmc)) : "";
+    }
+    case "power_toughness": {
+      const p = el.data("power"), t = el.data("toughness");
+      return (p && t) ? `${p}/${t}` : "";
+    }
+    case "type":
+      return "";
+    case "none":
+      return "";
+    default:
+      return el.data("label") || "";
+  }
+}
+
+function getNodeLabelColor(el) {
+  if (colorMode === "identity" && el.data("node_type") === "Card") {
+    const ci = el.data("color_identity");
+    if (!ci) return "#e6edf3";
+    const colors = ci.split(",").filter(Boolean);
+    if (colors.length === 0) return "#e6edf3";
+    if (colors.length > 1) return "#e6edf3";
+    const c = colors[0];
+    if (c === "W" || c === "G") return "#111";
+    return "#e6edf3";
+  }
+  return "#8b949e";
+}
+
 // ── API Helpers ──────────────────────────────────────────────────────────────
 
 async function fetchJSON(url) {
@@ -205,11 +302,11 @@ async function loadStats() {
 
 async function loadInitialView() {
   exitLocalMode();
-  showLoading("Loading card-type overview…");
+  showLoading("Loading trigger overview…");
   try {
-    const elements = await fetchJSON("/api/graph?rel=HAS_TYPE");
+    const elements = await fetchJSON("/api/graph?rel=HAS_TRIGGER");
     renderGraph(elements);
-    toast("Showing cards connected by type. Use filters to explore.");
+    toast("Showing cards connected by trigger type. Use filters to explore.");
   } catch (e) {
     toast("Failed to load graph: " + e.message);
   }
@@ -385,7 +482,6 @@ function renderGraph(elements) {
     (e) => nodeSet.has(e.data.source) && nodeSet.has(e.data.target)
   );
 
-  // Apply weight filter
   const minWeight = parseFloat(document.getElementById("weightSlider").value);
   const finalEdges = minWeight > 1
     ? filteredEdges.filter((e) => (e.data.weight || 1) >= minWeight)
@@ -430,6 +526,29 @@ function layoutOptions(name) {
       };
     case "grid":
       return { name: "grid", animate: true, animationDuration: 400, rows: undefined };
+    case "compact": {
+      const container = document.getElementById("cy");
+      const w = container.clientWidth || 800;
+      const h = container.clientHeight || 600;
+      const isVertical = h > w;
+      return {
+        name: "fcose",
+        animate: true,
+        animationDuration: 600,
+        nodeDimensionsIncludeLabels: false,
+        idealEdgeLength: isVertical ? 40 : 50,
+        nodeRepulsion: isVertical ? 3000 : 4000,
+        edgeElasticity: 0.2,
+        gravity: isVertical ? 0.8 : 0.6,
+        gravityRange: isVertical ? 2.0 : 1.5,
+        numIter: 3000,
+        quality: "default",
+        randomize: true,
+        tile: true,
+        tilingPaddingVertical: isVertical ? 4 : 8,
+        tilingPaddingHorizontal: isVertical ? 8 : 4,
+      };
+    }
     default:
       return { name: "fcose", animate: true };
   }
@@ -478,6 +597,7 @@ async function showDetail(node) {
   if (d.set_name) metaParts.push(d.set_name);
   if (d.power && d.toughness) metaParts.push(`${d.power}/${d.toughness}`);
   if (d.loyalty) metaParts.push(`Loyalty: ${d.loyalty}`);
+  if (d.color_identity) metaParts.push(`Colors: ${d.color_identity}`);
   document.getElementById("detailMeta").textContent = metaParts.join(" · ");
 
   const oracle = document.getElementById("detailOracle");
@@ -638,9 +758,22 @@ function setupSearch() {
 
 // ── Filters & Query ─────────────────────────────────────────────────────────
 
-function setupFilters() {
-  const activeColors = new Set();
+function getActiveFilterState() {
+  return {
+    colors: activeColors,
+    type: document.getElementById("filterType").value,
+    keyword: document.getElementById("filterKeyword").value.trim(),
+    subtype: document.getElementById("filterSubtype").value.trim(),
+    format: document.getElementById("filterFormat").value,
+  };
+}
 
+function hasActiveFilters() {
+  const f = getActiveFilterState();
+  return f.colors.size > 0 || f.type || f.keyword || f.subtype || f.format;
+}
+
+function setupFilters() {
   document.querySelectorAll(".color-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const c = btn.dataset.color;
@@ -654,7 +787,6 @@ function setupFilters() {
     });
   });
 
-  // Weight slider
   const weightSlider = document.getElementById("weightSlider");
   const weightValue = document.getElementById("weightValue");
   weightSlider.addEventListener("input", () => {
@@ -663,6 +795,24 @@ function setupFilters() {
   weightSlider.addEventListener("change", () => {
     applyWeightFilter();
   });
+
+  // Color mode selector
+  const colorModeSelect = document.getElementById("colorModeSelect");
+  if (colorModeSelect) {
+    colorModeSelect.addEventListener("change", () => {
+      colorMode = colorModeSelect.value;
+      cy.style(cyStyle());
+    });
+  }
+
+  // Node label selector
+  const nodeLabelSelect = document.getElementById("nodeLabelSelect");
+  if (nodeLabelSelect) {
+    nodeLabelSelect.addEventListener("change", () => {
+      nodeLabel = nodeLabelSelect.value;
+      cy.style(cyStyle());
+    });
+  }
 
   document.getElementById("btnQuery").addEventListener("click", async () => {
     const type = document.getElementById("filterType").value;
@@ -755,7 +905,17 @@ function setupFilters() {
     showLoading("Updating view…");
     try {
       const url = params.toString() ? `/api/graph?${params}` : "/api/graph";
-      const elements = await fetchJSON(url);
+      let elements = await fetchJSON(url);
+
+      if (hasActiveFilters()) {
+        elements = applyClientFilters(elements);
+        if (!elements.length) {
+          toast("No nodes match current filters in this view.");
+          hideLoading();
+          return;
+        }
+      }
+
       renderGraph(elements);
       toast(
         rel || nt
@@ -799,6 +959,102 @@ function setupFilters() {
     hideLoading();
     closeSidebarOnMobile();
   });
+}
+
+function applyClientFilters(elements) {
+  const f = getActiveFilterState();
+  if (!f.colors.size && !f.type && !f.keyword && !f.subtype && !f.format) {
+    return elements;
+  }
+
+  const nodeMap = {};
+  const edges = [];
+  for (const el of elements) {
+    if (el.group === "nodes") nodeMap[el.data.id] = el;
+    else edges.push(el);
+  }
+
+  const cardNodes = Object.values(nodeMap).filter((n) => n.data.node_type === "Card");
+  const matchingCardIds = new Set();
+
+  for (const card of cardNodes) {
+    const d = card.data;
+    let pass = true;
+
+    if (f.colors.size > 0) {
+      const ci = (d.color_identity || "").split(",").filter(Boolean);
+      let colorMatch = false;
+      for (const c of f.colors) {
+        if (ci.includes(c)) { colorMatch = true; break; }
+      }
+      if (!colorMatch) pass = false;
+    }
+
+    if (pass && f.type) {
+      const typeEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "HAS_TYPE"
+      );
+      const types = typeEdges.map((e) => {
+        const target = nodeMap[e.data.target];
+        return target ? target.data.label : "";
+      });
+      if (!types.some((t) => t.toLowerCase() === f.type.toLowerCase())) pass = false;
+    }
+
+    if (pass && f.keyword) {
+      const kwEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "HAS_KEYWORD"
+      );
+      const kws = kwEdges.map((e) => {
+        const target = nodeMap[e.data.target];
+        return target ? target.data.label.toLowerCase() : "";
+      });
+      if (!kws.some((k) => k.includes(f.keyword.toLowerCase()))) pass = false;
+    }
+
+    if (pass && f.subtype) {
+      const subEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "HAS_SUBTYPE"
+      );
+      const subs = subEdges.map((e) => {
+        const target = nodeMap[e.data.target];
+        return target ? target.data.label.toLowerCase() : "";
+      });
+      if (!subs.some((s) => s.includes(f.subtype.toLowerCase()))) pass = false;
+    }
+
+    if (pass && f.format) {
+      const fmtEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "LEGAL_IN"
+      );
+      const fmts = fmtEdges.map((e) => {
+        const target = nodeMap[e.data.target];
+        return target ? target.data.label.toLowerCase() : "";
+      });
+      if (!fmts.some((fn) => fn.includes(f.format.toLowerCase()))) pass = false;
+    }
+
+    if (pass) matchingCardIds.add(d.id);
+  }
+
+  if (matchingCardIds.size === 0) return [];
+
+  const resultNodeIds = new Set(matchingCardIds);
+  const resultEdges = [];
+  for (const edge of edges) {
+    if (matchingCardIds.has(edge.data.source) || matchingCardIds.has(edge.data.target)) {
+      resultNodeIds.add(edge.data.source);
+      resultNodeIds.add(edge.data.target);
+      resultEdges.push(edge);
+    }
+  }
+
+  const result = [];
+  for (const nid of resultNodeIds) {
+    if (nodeMap[nid]) result.push(nodeMap[nid]);
+  }
+  result.push(...resultEdges);
+  return result;
 }
 
 function applyWeightFilter() {

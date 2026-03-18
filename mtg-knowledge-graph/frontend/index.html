@@ -115,11 +115,12 @@
           <option value="HAS_TYPE">Card types</option>
           <option value="HAS_SUBTYPE">Subtypes</option>
           <option value="HAS_KEYWORD">Keywords</option>
-          <option value="HAS_TRIGGER">Triggers</option>
+          <option value="HAS_TRIGGER" selected>Triggers</option>
           <option value="IN_SET">Sets</option>
           <option value="SYNERGY">Synergies</option>
           <option value="LEGAL_IN">Legalities</option>
           <option value="PRODUCES_MANA">Mana production</option>
+          <option value="HAS_MANA_VALUE">Mana value</option>
         </select>
       </div>
       <div class="filter-group">
@@ -134,10 +135,31 @@
           <option value="Trigger">Triggers</option>
           <option value="Set">Sets</option>
           <option value="Format">Formats</option>
+          <option value="ManaValue">Mana Values</option>
         </select>
       </div>
       <div class="btn-row">
         <button class="btn primary" id="btnView">Update view</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Display</h3>
+      <div class="filter-group">
+        <label>Node color</label>
+        <select id="colorModeSelect">
+          <option value="type">By node type</option>
+          <option value="identity">By mana color identity</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Node label</label>
+        <select id="nodeLabelSelect">
+          <option value="name">Card name</option>
+          <option value="mana_value">Mana value</option>
+          <option value="power_toughness">Power / Toughness</option>
+          <option value="none">None</option>
+        </select>
       </div>
     </div>
 
@@ -174,6 +196,7 @@
       <button class="btn" data-layout="circle" title="Circle layout">Circle</button>
       <button class="btn" data-layout="concentric" title="Concentric layout">Rings</button>
       <button class="btn" data-layout="grid" title="Grid layout">Grid</button>
+      <button class="btn" data-layout="compact" title="Compact layout – maximizes viewport use">Compact</button>
     </div>
 
     <div class="graph-controls">
@@ -185,6 +208,7 @@
     <div class="legend" id="legend">
       <div class="legend-toggle" id="legendToggle">Legend ▾</div>
       <div class="legend-items" id="legendItems">
+        <div class="legend-section-title" id="legendTypeSection">Node types</div>
         <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Card</div>
         <div class="legend-item"><div class="legend-dot" style="background:#f0c040"></div> Color</div>
         <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Card Type</div>
@@ -194,6 +218,13 @@
         <div class="legend-item"><div class="legend-dot" style="background:#f778ba"></div> Format</div>
         <div class="legend-item"><div class="legend-dot" style="background:#79c0ff"></div> Trigger</div>
         <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div> Other</div>
+        <div class="legend-section-title" id="legendManaSection">Mana identity</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f9faf4;border:1px solid #666"></div> White</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#0e68ab"></div> Blue</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#150b00;border:1px solid #666"></div> Black</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#d3202a"></div> Red</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#00733e"></div> Green</div>
+        <div class="legend-item"><div class="legend-dot legend-pie-sample"></div> Multicolor (pie)</div>
       </div>
     </div>
   </div>
