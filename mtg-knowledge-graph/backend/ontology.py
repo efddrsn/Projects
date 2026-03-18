@@ -12,6 +12,7 @@ Node types:
   Rarity      – common, uncommon, rare, mythic
   Format      – Standard, Modern, Pioneer, Legacy, Vintage, Commander, …
   ManaValue   – integer converted mana cost bucket (0, 1, 2, …)
+  Trigger     – ETB, Dies, Attack, CombatDamage, SpellCast, …
 
 Edge types (relationships):
   Card  -[HAS_COLOR]->       Color
@@ -26,6 +27,7 @@ Edge types (relationships):
   Card  -[HAS_MANA_VALUE]->  ManaValue
   Card  -[PRODUCES_MANA]->   Color  (for lands / mana dorks)
   Card  -[SYNERGY]->         Card   (shared keywords / subtypes)
+  Card  -[HAS_TRIGGER]->     Trigger (triggered ability event)
 """
 
 import re
@@ -43,6 +45,82 @@ KNOWN_CARD_TYPES = {
 }
 
 MANA_SYMBOL_RE = re.compile(r"\{([WUBRGC])\}")
+
+TRIGGER_PATTERNS = {
+    "ETB": [
+        re.compile(r"enters the battlefield", re.I),
+        re.compile(r"enters under your control", re.I),
+    ],
+    "Dies": [
+        re.compile(r"\bdies\b", re.I),
+        re.compile(r"put into (?:a |your )?graveyard from the battlefield", re.I),
+    ],
+    "LTB": [
+        re.compile(r"leaves the battlefield", re.I),
+    ],
+    "Attack": [
+        re.compile(r"whenever .{0,30}attacks", re.I),
+        re.compile(r"when .{0,20}attacks", re.I),
+    ],
+    "Combat Damage": [
+        re.compile(r"deals combat damage", re.I),
+    ],
+    "Damage": [
+        re.compile(r"deals? (?:damage|.{0,15}damage)", re.I),
+        re.compile(r"is dealt damage", re.I),
+    ],
+    "Spell Cast": [
+        re.compile(r"(?:when|whenever) (?:you|a player) cast", re.I),
+        re.compile(r"whenever .{0,20}cast .{0,15}spell", re.I),
+    ],
+    "Upkeep": [
+        re.compile(r"(?:at the )?beginning of (?:your |each )?upkeep", re.I),
+    ],
+    "End Step": [
+        re.compile(r"(?:at the )?beginning of (?:your |each |the )?end step", re.I),
+    ],
+    "Draw": [
+        re.compile(r"whenever .{0,20}draws? a card", re.I),
+    ],
+    "Discard": [
+        re.compile(r"whenever .{0,20}discards?", re.I),
+    ],
+    "Sacrifice": [
+        re.compile(r"whenever .{0,20}sacrifices?", re.I),
+        re.compile(r"sacrifice (?:a|an|this)", re.I),
+    ],
+    "Life Gain": [
+        re.compile(r"whenever you gain life", re.I),
+    ],
+    "Life Loss": [
+        re.compile(r"whenever .{0,20}loses? life", re.I),
+    ],
+    "Token": [
+        re.compile(r"create[s]? .{0,30}token", re.I),
+    ],
+    "Mill": [
+        re.compile(r"(?:mill|put .{0,30}into .{0,10}graveyard from .{0,10}library)", re.I),
+    ],
+}
+
+TRIGGER_LABELS = {
+    "ETB": "Enters the Battlefield",
+    "Dies": "Dies",
+    "LTB": "Leaves the Battlefield",
+    "Attack": "Attacks",
+    "Combat Damage": "Deals Combat Damage",
+    "Damage": "Deals/Takes Damage",
+    "Spell Cast": "Spell Cast",
+    "Upkeep": "Upkeep Trigger",
+    "End Step": "End Step Trigger",
+    "Draw": "Card Draw",
+    "Discard": "Discard",
+    "Sacrifice": "Sacrifice",
+    "Life Gain": "Life Gain",
+    "Life Loss": "Life Loss",
+    "Token": "Token Creation",
+    "Mill": "Mill",
+}
 
 
 def _parse_type_line(type_line):
@@ -112,9 +190,9 @@ def build_graph(cards):
 
         # Colors
         for c in (card.get("colors") or []):
-            G.add_edge(f"card:{card_id}", f"color:{c}", rel="HAS_COLOR")
+            G.add_edge(f"card:{card_id}", f"color:{c}", rel="HAS_COLOR", weight=1)
         for c in (card.get("color_identity") or []):
-            G.add_edge(f"card:{card_id}", f"color:{c}", rel="HAS_COLOR_IDENTITY")
+            G.add_edge(f"card:{card_id}", f"color:{c}", rel="HAS_COLOR_IDENTITY", weight=1)
 
         # Type line
         type_line = card.get("type_line", "")
@@ -124,26 +202,26 @@ def build_graph(cards):
             nid = f"supertype:{st}"
             if nid not in G:
                 G.add_node(nid, label=st, node_type="Supertype")
-            G.add_edge(f"card:{card_id}", nid, rel="HAS_SUPERTYPE")
+            G.add_edge(f"card:{card_id}", nid, rel="HAS_SUPERTYPE", weight=1)
 
         for ct in card_types:
             nid = f"cardtype:{ct}"
             if nid not in G:
                 G.add_node(nid, label=ct, node_type="CardType")
-            G.add_edge(f"card:{card_id}", nid, rel="HAS_TYPE")
+            G.add_edge(f"card:{card_id}", nid, rel="HAS_TYPE", weight=1)
 
         for sub in subtypes:
             nid = f"subtype:{sub}"
             if nid not in G:
                 G.add_node(nid, label=sub, node_type="Subtype")
-            G.add_edge(f"card:{card_id}", nid, rel="HAS_SUBTYPE")
+            G.add_edge(f"card:{card_id}", nid, rel="HAS_SUBTYPE", weight=1)
 
         # Keywords
         for kw in card.get("keywords", []):
             nid = f"keyword:{kw}"
             if nid not in G:
                 G.add_node(nid, label=kw, node_type="Keyword")
-            G.add_edge(f"card:{card_id}", nid, rel="HAS_KEYWORD")
+            G.add_edge(f"card:{card_id}", nid, rel="HAS_KEYWORD", weight=1)
 
         # Set
         set_code = card.get("set", "")
@@ -151,7 +229,7 @@ def build_graph(cards):
             nid = f"set:{set_code}"
             if nid not in G:
                 G.add_node(nid, label=card.get("set_name", set_code), node_type="Set", code=set_code)
-            G.add_edge(f"card:{card_id}", nid, rel="IN_SET")
+            G.add_edge(f"card:{card_id}", nid, rel="IN_SET", weight=1)
 
         # Rarity
         rarity = card.get("rarity", "")
@@ -159,14 +237,14 @@ def build_graph(cards):
             nid = f"rarity:{rarity}"
             if nid not in G:
                 G.add_node(nid, label=rarity.title(), node_type="Rarity")
-            G.add_edge(f"card:{card_id}", nid, rel="HAS_RARITY")
+            G.add_edge(f"card:{card_id}", nid, rel="HAS_RARITY", weight=1)
 
         # Mana value bucket
         cmc = int(card.get("cmc", 0))
         nid = f"mv:{cmc}"
         if nid not in G:
             G.add_node(nid, label=f"MV {cmc}", node_type="ManaValue", value=cmc)
-        G.add_edge(f"card:{card_id}", nid, rel="HAS_MANA_VALUE")
+        G.add_edge(f"card:{card_id}", nid, rel="HAS_MANA_VALUE", weight=1)
 
         # Legalities
         for fmt, status in card.get("legalities", {}).items():
@@ -174,15 +252,29 @@ def build_graph(cards):
                 nid = f"format:{fmt}"
                 if nid not in G:
                     G.add_node(nid, label=fmt.replace("_", " ").title(), node_type="Format")
-                G.add_edge(f"card:{card_id}", nid, rel="LEGAL_IN")
+                G.add_edge(f"card:{card_id}", nid, rel="LEGAL_IN", weight=1)
 
         # Mana production (heuristic: look for "Add {X}" in oracle text)
         oracle = card.get("oracle_text", "") or ""
         for sym in MANA_SYMBOL_RE.findall(oracle):
             if sym in COLOR_MAP and "add" in oracle.lower():
-                G.add_edge(f"card:{card_id}", f"color:{sym}", rel="PRODUCES_MANA")
+                G.add_edge(f"card:{card_id}", f"color:{sym}", rel="PRODUCES_MANA", weight=1)
+
+        # Trigger events
+        for trigger_key, patterns in TRIGGER_PATTERNS.items():
+            for pat in patterns:
+                if pat.search(oracle):
+                    nid = f"trigger:{trigger_key}"
+                    if nid not in G:
+                        G.add_node(nid,
+                                   label=TRIGGER_LABELS.get(trigger_key, trigger_key),
+                                   node_type="Trigger",
+                                   trigger_key=trigger_key)
+                    G.add_edge(f"card:{card_id}", nid, rel="HAS_TRIGGER", weight=1)
+                    break
 
     _add_synergy_edges(G)
+    _add_edge_weights(G)
     return G
 
 
@@ -215,8 +307,9 @@ def _add_synergy_edges(G):
 
     for a, b in synergy_pairs:
         shared = _shared_traits(G, a, b)
-        G.add_edge(a, b, rel="SYNERGY", shared=", ".join(shared))
-        G.add_edge(b, a, rel="SYNERGY", shared=", ".join(shared))
+        w = len(shared)
+        G.add_edge(a, b, rel="SYNERGY", shared=", ".join(shared), weight=w)
+        G.add_edge(b, a, rel="SYNERGY", shared=", ".join(shared), weight=w)
 
 
 def _shared_traits(G, a, b):
@@ -230,6 +323,29 @@ def _shared_traits(G, a, b):
     for n in shared_sub | shared_kw:
         labels.append(G.nodes[n].get("label", n))
     return labels
+
+
+def _add_edge_weights(G):
+    """Enhance edge weights: SYNERGY weight is already set by shared trait count.
+    For taxonomy edges (HAS_SUBTYPE, HAS_KEYWORD, HAS_TRIGGER), weight is
+    inversely proportional to the target's in-degree (rarer = stronger).
+    """
+    boost_rels = {"HAS_SUBTYPE", "HAS_KEYWORD", "HAS_TRIGGER"}
+    in_degrees = {}
+    for _, t, d in G.edges(data=True):
+        if d.get("rel") in boost_rels:
+            in_degrees[t] = in_degrees.get(t, 0) + 1
+
+    if not in_degrees:
+        return
+    max_deg = max(in_degrees.values())
+    if max_deg <= 1:
+        return
+
+    for s, t, k, d in G.edges(data=True, keys=True):
+        if d.get("rel") in boost_rels:
+            deg = in_degrees.get(t, 1)
+            d["weight"] = round(max(1, (max_deg / deg)), 1)
 
 
 def graph_to_cytoscape(G):

@@ -4,6 +4,8 @@ const API = "";
 let cy;
 let currentLayout = "fcose";
 let selectedNode = null;
+let localMode = false;
+let localElements = null; // stash of all elements in local/neighborhood view
 
 const NODE_COLORS = {
   Card: "#58a6ff",
@@ -16,6 +18,7 @@ const NODE_COLORS = {
   Rarity: "#8b949e",
   ManaValue: "#8b949e",
   Format: "#f778ba",
+  Trigger: "#79c0ff",
 };
 
 const NODE_SIZES = {
@@ -29,6 +32,7 @@ const NODE_SIZES = {
   Rarity: 18,
   ManaValue: 16,
   Format: 22,
+  Trigger: 26,
 };
 
 // ── Initialization ──────────────────────────────────────────────────────────
@@ -45,9 +49,11 @@ async function init() {
   cy.on("tap", "node", onNodeTap);
   cy.on("tap", (e) => { if (e.target === cy) clearSelection(); });
 
+  setupSidebar();
   setupSearch();
   setupFilters();
   setupControls();
+  setupLegend();
 
   await loadStats();
   await loadInitialView();
@@ -81,6 +87,14 @@ function cyStyle() {
       },
     },
     {
+      selector: "node[node_type='Trigger']",
+      style: {
+        shape: "diamond",
+        width: 26,
+        height: 26,
+      },
+    },
+    {
       selector: "node:selected",
       style: {
         "border-width": 3,
@@ -90,13 +104,19 @@ function cyStyle() {
     {
       selector: "edge",
       style: {
-        width: 1,
+        width: (el) => {
+          const w = el.data("weight") || 1;
+          return Math.min(0.5 + w * 0.5, 5);
+        },
         "line-color": "#30363d",
         "target-arrow-color": "#30363d",
         "target-arrow-shape": "triangle",
         "curve-style": "bezier",
         "arrow-scale": 0.6,
-        opacity: 0.5,
+        opacity: (el) => {
+          const w = el.data("weight") || 1;
+          return Math.min(0.3 + w * 0.1, 1);
+        },
       },
     },
     {
@@ -105,8 +125,8 @@ function cyStyle() {
         "line-color": "#d29922",
         "target-arrow-color": "#d29922",
         "line-style": "dashed",
-        width: 1.5,
-        opacity: 0.7,
+        width: (el) => Math.min(1 + (el.data("weight") || 1) * 0.5, 5),
+        opacity: (el) => Math.min(0.4 + (el.data("weight") || 1) * 0.15, 1),
       },
     },
     {
@@ -120,6 +140,14 @@ function cyStyle() {
     {
       selector: "edge[rel='HAS_KEYWORD']",
       style: { "line-color": "#f85149", "target-arrow-color": "#f85149" },
+    },
+    {
+      selector: "edge[rel='HAS_TRIGGER']",
+      style: {
+        "line-color": "#79c0ff",
+        "target-arrow-color": "#79c0ff",
+        "line-style": "dotted",
+      },
     },
     {
       selector: ".highlighted",
@@ -176,6 +204,7 @@ async function loadStats() {
 }
 
 async function loadInitialView() {
+  exitLocalMode();
   showLoading("Loading card-type overview…");
   try {
     const elements = await fetchJSON("/api/graph?rel=HAS_TYPE");
@@ -188,6 +217,7 @@ async function loadInitialView() {
 }
 
 async function loadFullGraph() {
+  exitLocalMode();
   showLoading("Loading full graph…");
   try {
     const elements = await fetchJSON("/api/graph");
@@ -202,6 +232,7 @@ async function loadNeighborhood(nodeId) {
   showLoading("Loading neighborhood…");
   try {
     const elements = await fetchJSON(`/api/node/${encodeURIComponent(nodeId)}`);
+    enterLocalMode(elements);
     renderGraph(elements);
     setTimeout(() => {
       const n = cy.getElementById(nodeId);
@@ -214,6 +245,119 @@ async function loadNeighborhood(nodeId) {
     toast("Failed to load neighborhood: " + e.message);
   }
   hideLoading();
+}
+
+// ── Local Mode ──────────────────────────────────────────────────────────────
+
+function enterLocalMode(elements) {
+  localMode = true;
+  localElements = elements;
+  document.getElementById("localModeBanner").classList.remove("hidden");
+}
+
+function exitLocalMode() {
+  localMode = false;
+  localElements = null;
+  document.getElementById("localModeBanner").classList.add("hidden");
+}
+
+function filterLocalElements(activeColors, type, keyword, subtype, format) {
+  if (!localElements) return [];
+
+  const nodeMap = {};
+  const edges = [];
+  for (const el of localElements) {
+    if (el.group === "nodes") nodeMap[el.data.id] = el;
+    else edges.push(el);
+  }
+
+  const cardNodes = Object.values(nodeMap).filter((n) => n.data.node_type === "Card");
+  const matchingCardIds = new Set();
+
+  for (const card of cardNodes) {
+    const d = card.data;
+    let pass = true;
+
+    if (activeColors.size > 0) {
+      const cardEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "HAS_COLOR_IDENTITY"
+      );
+      const cardColors = new Set(cardEdges.map((e) => {
+        const targetId = e.data.target;
+        return targetId.replace("color:", "");
+      }));
+      let colorMatch = false;
+      for (const c of activeColors) {
+        if (cardColors.has(c)) { colorMatch = true; break; }
+      }
+      if (!colorMatch) pass = false;
+    }
+
+    if (pass && type) {
+      const typeEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "HAS_TYPE"
+      );
+      const types = typeEdges.map((e) => {
+        const target = nodeMap[e.data.target];
+        return target ? target.data.label : "";
+      });
+      if (!types.some((t) => t.toLowerCase() === type.toLowerCase())) pass = false;
+    }
+
+    if (pass && keyword) {
+      const kwEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "HAS_KEYWORD"
+      );
+      const kws = kwEdges.map((e) => {
+        const target = nodeMap[e.data.target];
+        return target ? target.data.label.toLowerCase() : "";
+      });
+      if (!kws.some((k) => k.includes(keyword.toLowerCase()))) pass = false;
+    }
+
+    if (pass && subtype) {
+      const subEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "HAS_SUBTYPE"
+      );
+      const subs = subEdges.map((e) => {
+        const target = nodeMap[e.data.target];
+        return target ? target.data.label.toLowerCase() : "";
+      });
+      if (!subs.some((s) => s.includes(subtype.toLowerCase()))) pass = false;
+    }
+
+    if (pass && format) {
+      const fmtEdges = edges.filter(
+        (e) => e.data.source === d.id && e.data.rel === "LEGAL_IN"
+      );
+      const fmts = fmtEdges.map((e) => {
+        const target = nodeMap[e.data.target];
+        return target ? target.data.label.toLowerCase() : "";
+      });
+      if (!fmts.some((f) => f.includes(format.toLowerCase()))) pass = false;
+    }
+
+    if (pass) matchingCardIds.add(d.id);
+  }
+
+  if (matchingCardIds.size === 0) return [];
+
+  const resultNodeIds = new Set(matchingCardIds);
+  const resultEdges = [];
+  for (const edge of edges) {
+    if (matchingCardIds.has(edge.data.source) || matchingCardIds.has(edge.data.target)) {
+      resultNodeIds.add(edge.data.source);
+      resultNodeIds.add(edge.data.target);
+      resultEdges.push(edge);
+    }
+  }
+
+  const result = [];
+  for (const nid of resultNodeIds) {
+    if (nodeMap[nid]) result.push(nodeMap[nid]);
+  }
+  result.push(...resultEdges);
+  return result;
 }
 
 // ── Graph Rendering ─────────────────────────────────────────────────────────
@@ -241,8 +385,14 @@ function renderGraph(elements) {
     (e) => nodeSet.has(e.data.source) && nodeSet.has(e.data.target)
   );
 
+  // Apply weight filter
+  const minWeight = parseFloat(document.getElementById("weightSlider").value);
+  const finalEdges = minWeight > 1
+    ? filteredEdges.filter((e) => (e.data.weight || 1) >= minWeight)
+    : filteredEdges;
+
   cy.add(filteredNodes);
-  cy.add(filteredEdges);
+  cy.add(finalEdges);
   runLayout();
 }
 
@@ -346,20 +496,24 @@ async function showDetail(node) {
     const rel = edge.data("rel") || "CONNECTED";
     const other = edge.source().id() === node.id() ? edge.target() : edge.source();
     if (!relMap[rel]) relMap[rel] = [];
-    relMap[rel].push(other);
+    relMap[rel].push({ node: other, weight: edge.data("weight") });
   });
 
-  for (const [rel, nodes] of Object.entries(relMap)) {
+  for (const [rel, items] of Object.entries(relMap)) {
     const group = document.createElement("div");
     group.className = "rel-group";
-    group.innerHTML = `<div class="rel-label">${rel}</div><div class="rel-values">${nodes
-      .map(
-        (n) =>
-          `<span class="rel-tag" data-id="${n.id()}" style="border-left:3px solid ${
-            NODE_COLORS[n.data("node_type")] || "#8b949e"
-          }">${n.data("label") || n.id()}</span>`
-      )
-      .join("")}</div>`;
+    const valuesHtml = items
+      .map((item) => {
+        const n = item.node;
+        const wBadge = item.weight && item.weight > 1
+          ? ` <span style="font-size:9px;opacity:0.7">×${item.weight}</span>`
+          : "";
+        return `<span class="rel-tag" data-id="${n.id()}" style="border-left:3px solid ${
+          NODE_COLORS[n.data("node_type")] || "#8b949e"
+        }">${n.data("label") || n.id()}${wBadge}</span>`;
+      })
+      .join("");
+    group.innerHTML = `<div class="rel-label">${rel}</div><div class="rel-values">${valuesHtml}</div>`;
     rels.appendChild(group);
   }
 
@@ -374,7 +528,55 @@ async function showDetail(node) {
     });
   });
 
-  document.getElementById("btnExplore").onclick = () => loadNeighborhood(d.id);
+  document.getElementById("btnExplore").onclick = () => {
+    loadNeighborhood(d.id);
+    closeSidebarOnMobile();
+  };
+}
+
+// ── Sidebar ─────────────────────────────────────────────────────────────────
+
+function setupSidebar() {
+  const toggle = document.getElementById("sidebarToggle");
+  const sidebar = document.getElementById("sidebar");
+  const overlay = document.getElementById("sidebarOverlay");
+
+  toggle.addEventListener("click", () => {
+    sidebar.classList.toggle("open");
+    overlay.classList.toggle("visible");
+  });
+
+  overlay.addEventListener("click", () => {
+    closeSidebarOnMobile();
+  });
+
+  document.getElementById("btnExitLocal").addEventListener("click", () => {
+    exitLocalMode();
+    loadInitialView();
+  });
+}
+
+function closeSidebarOnMobile() {
+  if (window.innerWidth <= 768) {
+    document.getElementById("sidebar").classList.remove("open");
+    document.getElementById("sidebarOverlay").classList.remove("visible");
+  }
+}
+
+// ── Legend ───────────────────────────────────────────────────────────────────
+
+function setupLegend() {
+  const toggle = document.getElementById("legendToggle");
+  const items = document.getElementById("legendItems");
+
+  if (window.innerWidth <= 768) {
+    items.classList.add("collapsed");
+  }
+
+  toggle.addEventListener("click", () => {
+    items.classList.toggle("collapsed");
+    toggle.textContent = items.classList.contains("collapsed") ? "Legend ▸" : "Legend ▾";
+  });
 }
 
 // ── Search ──────────────────────────────────────────────────────────────────
@@ -426,6 +628,7 @@ function setupSearch() {
     } else {
       loadNeighborhood(id);
     }
+    closeSidebarOnMobile();
   });
 
   document.addEventListener("click", (e) => {
@@ -451,16 +654,39 @@ function setupFilters() {
     });
   });
 
+  // Weight slider
+  const weightSlider = document.getElementById("weightSlider");
+  const weightValue = document.getElementById("weightValue");
+  weightSlider.addEventListener("input", () => {
+    weightValue.textContent = weightSlider.value;
+  });
+  weightSlider.addEventListener("change", () => {
+    applyWeightFilter();
+  });
+
   document.getElementById("btnQuery").addEventListener("click", async () => {
+    const type = document.getElementById("filterType").value;
+    const kw = document.getElementById("filterKeyword").value.trim();
+    const sub = document.getElementById("filterSubtype").value.trim();
+    const fmt = document.getElementById("filterFormat").value;
+
+    if (localMode) {
+      const filtered = filterLocalElements(activeColors, type, kw, sub, fmt);
+      if (!filtered.length) {
+        toast("No cards in this neighborhood match those filters.");
+        return;
+      }
+      toast(`Filtered to ${filtered.filter((e) => e.group === "nodes" && e.data.node_type === "Card").length} card(s) in local view.`);
+      renderGraph(filtered);
+      closeSidebarOnMobile();
+      return;
+    }
+
     const params = new URLSearchParams();
     if (activeColors.size) params.set("color", [...activeColors][0]);
-    const type = document.getElementById("filterType").value;
     if (type) params.set("card_type", type);
-    const kw = document.getElementById("filterKeyword").value.trim();
     if (kw) params.set("keyword", kw);
-    const sub = document.getElementById("filterSubtype").value.trim();
     if (sub) params.set("subtype", sub);
-    const fmt = document.getElementById("filterFormat").value;
     if (fmt) params.set("format", fmt);
 
     showLoading("Querying…");
@@ -475,7 +701,6 @@ function setupFilters() {
 
       const nodeIds = cards.map((c) => c.id);
       const allElements = [];
-      const batchSize = 10;
       for (let i = 0; i < Math.min(nodeIds.length, 30); i++) {
         const els = await fetchJSON(`/api/node/${encodeURIComponent(nodeIds[i])}`);
         allElements.push(...els);
@@ -493,6 +718,7 @@ function setupFilters() {
       toast("Query failed: " + e.message);
     }
     hideLoading();
+    closeSidebarOnMobile();
   });
 
   document.getElementById("btnReset").addEventListener("click", () => {
@@ -502,15 +728,29 @@ function setupFilters() {
     document.getElementById("filterKeyword").value = "";
     document.getElementById("filterSubtype").value = "";
     document.getElementById("filterFormat").value = "";
-    loadInitialView();
+    weightSlider.value = "1";
+    weightValue.textContent = "1";
+
+    if (localMode && localElements) {
+      renderGraph(localElements);
+      toast("Filters reset. Showing full local neighborhood.");
+    } else {
+      loadInitialView();
+    }
   });
 
   document.getElementById("btnView").addEventListener("click", async () => {
     const rel = document.getElementById("viewRel").value;
     const nt = document.getElementById("viewNodeType").value;
+    const minWeight = parseFloat(weightSlider.value);
     const params = new URLSearchParams();
     if (rel) params.set("rel", rel);
     if (nt) params.set("node_type", nt);
+    if (minWeight > 1) params.set("min_weight", minWeight);
+
+    if (localMode) {
+      exitLocalMode();
+    }
 
     showLoading("Updating view…");
     try {
@@ -526,6 +766,7 @@ function setupFilters() {
       toast("View update failed: " + e.message);
     }
     hideLoading();
+    closeSidebarOnMobile();
   });
 
   document.getElementById("btnPath").addEventListener("click", async () => {
@@ -556,7 +797,21 @@ function setupFilters() {
       toast("Path search failed: " + e.message);
     }
     hideLoading();
+    closeSidebarOnMobile();
   });
+}
+
+function applyWeightFilter() {
+  const minWeight = parseFloat(document.getElementById("weightSlider").value);
+  if (minWeight <= 1) {
+    cy.edges().style("display", "element");
+    return;
+  }
+  cy.edges().forEach((edge) => {
+    const w = edge.data("weight") || 1;
+    edge.style("display", w >= minWeight ? "element" : "none");
+  });
+  toast(`Showing connections with weight ≥ ${minWeight}`);
 }
 
 // ── Controls ────────────────────────────────────────────────────────────────
