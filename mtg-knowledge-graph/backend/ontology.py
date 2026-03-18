@@ -174,6 +174,12 @@ def build_graph(cards):
 
         color_identity = card.get("color_identity") or []
 
+        type_line = card.get("type_line", "")
+        supertypes, card_types, subtypes = _parse_type_line(type_line)
+        keywords_list = card.get("keywords", [])
+        legalities = card.get("legalities", {})
+        legal_formats = [fmt for fmt, status in legalities.items() if status == "legal"]
+
         G.add_node(f"card:{card_id}", **{
             "node_type": "Card",
             "label": name,
@@ -189,6 +195,11 @@ def build_graph(cards):
             "set_code": card.get("set", ""),
             "set_name": card.get("set_name", ""),
             "image": image,
+            "type_line": type_line,
+            "card_types": ",".join(card_types),
+            "subtypes": ",".join(subtypes),
+            "keywords": ",".join(keywords_list),
+            "formats": ",".join(legal_formats),
         })
 
         # Colors
@@ -196,10 +207,6 @@ def build_graph(cards):
             G.add_edge(f"card:{card_id}", f"color:{c}", rel="HAS_COLOR", weight=1)
         for c in (card.get("color_identity") or []):
             G.add_edge(f"card:{card_id}", f"color:{c}", rel="HAS_COLOR_IDENTITY", weight=1)
-
-        # Type line
-        type_line = card.get("type_line", "")
-        supertypes, card_types, subtypes = _parse_type_line(type_line)
 
         for st in supertypes:
             nid = f"supertype:{st}"

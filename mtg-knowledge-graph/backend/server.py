@@ -293,6 +293,57 @@ def api_neighbors():
     return jsonify(neighbors)
 
 
+@app.route("/api/graph/cards-by-trigger")
+def api_cards_by_trigger():
+    """Return card-to-card connections through shared triggers.
+    Trigger nodes are collapsed: cards sharing a trigger are linked directly.
+    Multiple shared triggers between the same pair are aggregated into one edge."""
+    _ensure_data()
+
+    MAX_GROUP = 50
+
+    trigger_to_cards = {}
+    for s, t, d in _graph.edges(data=True):
+        if d.get("rel") == "HAS_TRIGGER":
+            trigger_to_cards.setdefault(t, []).append(s)
+
+    pair_triggers = {}
+    for trigger_id, cards in trigger_to_cards.items():
+        if len(cards) > MAX_GROUP:
+            continue
+        trigger_label = _graph.nodes[trigger_id].get("label", trigger_id)
+        for i, a in enumerate(cards):
+            for b in cards[i + 1:]:
+                pair = tuple(sorted([a, b]))
+                pair_triggers.setdefault(pair, []).append(trigger_label)
+
+    card_ids = set()
+    edge_elements = []
+    for (a, b), triggers in pair_triggers.items():
+        card_ids.add(a)
+        card_ids.add(b)
+        edge_elements.append({
+            "group": "edges",
+            "data": {
+                "id": f"{a}->{b}:SHARED_TRIGGER",
+                "source": a,
+                "target": b,
+                "rel": "SHARED_TRIGGER",
+                "trigger": ", ".join(triggers),
+                "weight": len(triggers),
+            },
+        })
+
+    elements = []
+    for n in card_ids:
+        elements.append({
+            "group": "nodes",
+            "data": {"id": n, **dict(_graph.nodes[n])},
+        })
+    elements.extend(edge_elements)
+    return jsonify(elements)
+
+
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
     """Re-fetch cards from Scryfall and rebuild the graph."""
