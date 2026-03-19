@@ -301,7 +301,7 @@ def api_cards_by_trigger():
     Multiple shared triggers between the same pair are aggregated."""
     _ensure_data()
 
-    MAX_PER_SIDE = 80
+    MAX_EDGES_PER_TRIGGER = 2000
 
     trigger_sources = {}
     trigger_responders = {}
@@ -315,7 +315,7 @@ def api_cards_by_trigger():
     for trigger_id in set(trigger_sources) & set(trigger_responders):
         sources = trigger_sources[trigger_id]
         responders = trigger_responders[trigger_id]
-        if len(sources) > MAX_PER_SIDE or len(responders) > MAX_PER_SIDE:
+        if len(sources) * len(responders) > MAX_EDGES_PER_TRIGGER:
             continue
         trigger_label = _graph.nodes[trigger_id].get("label", trigger_id)
         for src in sources:

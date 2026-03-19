@@ -980,10 +980,22 @@ function setupFilters() {
             localElements.filter((e) => e.group === "nodes").map((e) => e.data.id)
           );
           const triggerData = await fetchJSON("/api/graph/cards-by-trigger");
-          filtered = triggerData.filter((e) => {
-            if (e.group === "nodes") return localNodeIds.has(e.data.id);
-            return localNodeIds.has(e.data.source) && localNodeIds.has(e.data.target);
-          });
+          const relevantEdges = triggerData.filter(
+            (e) =>
+              e.group === "edges" &&
+              (localNodeIds.has(e.data.source) || localNodeIds.has(e.data.target))
+          );
+          const neededNodeIds = new Set();
+          for (const e of relevantEdges) {
+            neededNodeIds.add(e.data.source);
+            neededNodeIds.add(e.data.target);
+          }
+          filtered = [
+            ...triggerData.filter(
+              (e) => e.group === "nodes" && neededNodeIds.has(e.data.id)
+            ),
+            ...relevantEdges,
+          ];
         } else {
           filtered = filterLocalByView(localElements, rel, nt);
         }
