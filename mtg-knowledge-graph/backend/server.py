@@ -295,42 +295,50 @@ def api_neighbors():
 
 @app.route("/api/graph/cards-by-trigger")
 def api_cards_by_trigger():
-    """Return card-to-card connections through shared triggers.
-    Trigger nodes are collapsed: cards sharing a trigger are linked directly.
-    Multiple shared triggers between the same pair are aggregated into one edge."""
+    """Return directional card-to-card connections through trigger relationships.
+    Cards that produce/enable a trigger event (sources) link to cards with
+    triggered abilities that respond to that event (responders).
+    Multiple shared triggers between the same pair are aggregated."""
     _ensure_data()
 
-    MAX_GROUP = 50
+    MAX_PER_SIDE = 80
 
-    trigger_to_cards = {}
+    trigger_sources = {}
+    trigger_responders = {}
     for s, t, d in _graph.edges(data=True):
-        if d.get("rel") == "HAS_TRIGGER":
-            trigger_to_cards.setdefault(t, []).append(s)
+        if d.get("rel") == "TRIGGERS":
+            trigger_sources.setdefault(t, []).append(s)
+        elif d.get("rel") == "IS_TRIGGERED_BY":
+            trigger_responders.setdefault(t, []).append(s)
 
     pair_triggers = {}
-    for trigger_id, cards in trigger_to_cards.items():
-        if len(cards) > MAX_GROUP:
+    for trigger_id in set(trigger_sources) & set(trigger_responders):
+        sources = trigger_sources[trigger_id]
+        responders = trigger_responders[trigger_id]
+        if len(sources) > MAX_PER_SIDE or len(responders) > MAX_PER_SIDE:
             continue
         trigger_label = _graph.nodes[trigger_id].get("label", trigger_id)
-        for i, a in enumerate(cards):
-            for b in cards[i + 1:]:
-                pair = tuple(sorted([a, b]))
+        for src in sources:
+            for resp in responders:
+                if src == resp:
+                    continue
+                pair = (src, resp)
                 pair_triggers.setdefault(pair, []).append(trigger_label)
 
     card_ids = set()
     edge_elements = []
-    for (a, b), triggers in pair_triggers.items():
-        card_ids.add(a)
-        card_ids.add(b)
+    for (src, resp), triggers in pair_triggers.items():
+        card_ids.add(src)
+        card_ids.add(resp)
         edge_elements.append({
             "group": "edges",
             "data": {
-                "id": f"{a}->{b}:SHARED_TRIGGER",
-                "source": a,
-                "target": b,
-                "rel": "SHARED_TRIGGER",
-                "trigger": ", ".join(triggers),
-                "weight": len(triggers),
+                "id": f"{src}->{resp}:TRIGGER_LINK",
+                "source": src,
+                "target": resp,
+                "rel": "TRIGGER_LINK",
+                "trigger": ", ".join(sorted(set(triggers))),
+                "weight": len(set(triggers)),
             },
         })
 
