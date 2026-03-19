@@ -175,6 +175,24 @@ function cyStyle() {
       },
     },
     {
+      selector: "edge[rel='SHARED_TRIGGER']",
+      style: {
+        "line-color": "#79c0ff",
+        "target-arrow-color": "#79c0ff",
+        "target-arrow-shape": "none",
+        "line-style": "solid",
+        width: 1.5,
+        opacity: 0.6,
+        label: (el) => el.data("trigger") || "",
+        "font-size": 7,
+        "text-rotation": "autorotate",
+        color: "#79c0ff",
+        "text-opacity": 0.8,
+        "text-outline-width": 1,
+        "text-outline-color": "#0d1117",
+      },
+    },
+    {
       selector: ".highlighted",
       style: {
         "border-width": 3,
@@ -302,11 +320,11 @@ async function loadStats() {
 
 async function loadInitialView() {
   exitLocalMode();
-  showLoading("Loading trigger overview…");
+  showLoading("Loading cards linked by triggers…");
   try {
-    const elements = await fetchJSON("/api/graph?rel=HAS_TRIGGER");
+    const elements = await fetchJSON("/api/graph/cards-by-trigger");
     renderGraph(elements);
-    toast("Showing cards connected by trigger type. Use filters to explore.");
+    toast("Showing cards linked through shared triggers. Use filters to explore.");
   } catch (e) {
     toast("Failed to load graph: " + e.message);
   }
@@ -376,62 +394,32 @@ function filterLocalElements(activeColors, type, keyword, subtype, format) {
     let pass = true;
 
     if (activeColors.size > 0) {
-      const cardEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "HAS_COLOR_IDENTITY"
-      );
-      const cardColors = new Set(cardEdges.map((e) => {
-        const targetId = e.data.target;
-        return targetId.replace("color:", "");
-      }));
+      const ci = (d.color_identity || "").split(",").filter(Boolean);
       let colorMatch = false;
       for (const c of activeColors) {
-        if (cardColors.has(c)) { colorMatch = true; break; }
+        if (ci.includes(c)) { colorMatch = true; break; }
       }
       if (!colorMatch) pass = false;
     }
 
     if (pass && type) {
-      const typeEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "HAS_TYPE"
-      );
-      const types = typeEdges.map((e) => {
-        const target = nodeMap[e.data.target];
-        return target ? target.data.label : "";
-      });
-      if (!types.some((t) => t.toLowerCase() === type.toLowerCase())) pass = false;
+      const cardTypes = (d.card_types || "").split(",").filter(Boolean);
+      if (!cardTypes.some((t) => t.toLowerCase() === type.toLowerCase())) pass = false;
     }
 
     if (pass && keyword) {
-      const kwEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "HAS_KEYWORD"
-      );
-      const kws = kwEdges.map((e) => {
-        const target = nodeMap[e.data.target];
-        return target ? target.data.label.toLowerCase() : "";
-      });
+      const kws = (d.keywords || "").split(",").filter(Boolean).map((k) => k.toLowerCase());
       if (!kws.some((k) => k.includes(keyword.toLowerCase()))) pass = false;
     }
 
     if (pass && subtype) {
-      const subEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "HAS_SUBTYPE"
-      );
-      const subs = subEdges.map((e) => {
-        const target = nodeMap[e.data.target];
-        return target ? target.data.label.toLowerCase() : "";
-      });
+      const subs = (d.subtypes || "").split(",").filter(Boolean).map((s) => s.toLowerCase());
       if (!subs.some((s) => s.includes(subtype.toLowerCase()))) pass = false;
     }
 
     if (pass && format) {
-      const fmtEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "LEGAL_IN"
-      );
-      const fmts = fmtEdges.map((e) => {
-        const target = nodeMap[e.data.target];
-        return target ? target.data.label.toLowerCase() : "";
-      });
-      if (!fmts.some((f) => f.includes(format.toLowerCase()))) pass = false;
+      const fmts = (d.formats || "").split(",").filter(Boolean).map((fn) => fn.toLowerCase());
+      if (!fmts.some((fn) => fn.includes(format.toLowerCase()))) pass = false;
     }
 
     if (pass) matchingCardIds.add(d.id);
@@ -893,10 +881,6 @@ function setupFilters() {
     const rel = document.getElementById("viewRel").value;
     const nt = document.getElementById("viewNodeType").value;
     const minWeight = parseFloat(weightSlider.value);
-    const params = new URLSearchParams();
-    if (rel) params.set("rel", rel);
-    if (nt) params.set("node_type", nt);
-    if (minWeight > 1) params.set("min_weight", minWeight);
 
     if (localMode) {
       exitLocalMode();
@@ -904,7 +888,17 @@ function setupFilters() {
 
     showLoading("Updating view…");
     try {
-      const url = params.toString() ? `/api/graph?${params}` : "/api/graph";
+      let url;
+      if (rel === "CARDS_BY_TRIGGER") {
+        url = "/api/graph/cards-by-trigger";
+      } else {
+        const params = new URLSearchParams();
+        if (rel) params.set("rel", rel);
+        if (nt) params.set("node_type", nt);
+        if (minWeight > 1) params.set("min_weight", minWeight);
+        url = params.toString() ? `/api/graph?${params}` : "/api/graph";
+      }
+
       let elements = await fetchJSON(url);
 
       if (hasActiveFilters()) {
@@ -918,9 +912,11 @@ function setupFilters() {
 
       renderGraph(elements);
       toast(
-        rel || nt
-          ? `Filtered: ${rel || "all rels"} × ${nt || "all types"}`
-          : "Showing full graph"
+        rel === "CARDS_BY_TRIGGER"
+          ? "Showing cards linked through shared triggers"
+          : rel || nt
+            ? `Filtered: ${rel || "all rels"} × ${nt || "all types"}`
+            : "Showing full graph"
       );
     } catch (e) {
       toast("View update failed: " + e.message);
@@ -991,46 +987,22 @@ function applyClientFilters(elements) {
     }
 
     if (pass && f.type) {
-      const typeEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "HAS_TYPE"
-      );
-      const types = typeEdges.map((e) => {
-        const target = nodeMap[e.data.target];
-        return target ? target.data.label : "";
-      });
-      if (!types.some((t) => t.toLowerCase() === f.type.toLowerCase())) pass = false;
+      const cardTypes = (d.card_types || "").split(",").filter(Boolean);
+      if (!cardTypes.some((t) => t.toLowerCase() === f.type.toLowerCase())) pass = false;
     }
 
     if (pass && f.keyword) {
-      const kwEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "HAS_KEYWORD"
-      );
-      const kws = kwEdges.map((e) => {
-        const target = nodeMap[e.data.target];
-        return target ? target.data.label.toLowerCase() : "";
-      });
+      const kws = (d.keywords || "").split(",").filter(Boolean).map((k) => k.toLowerCase());
       if (!kws.some((k) => k.includes(f.keyword.toLowerCase()))) pass = false;
     }
 
     if (pass && f.subtype) {
-      const subEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "HAS_SUBTYPE"
-      );
-      const subs = subEdges.map((e) => {
-        const target = nodeMap[e.data.target];
-        return target ? target.data.label.toLowerCase() : "";
-      });
+      const subs = (d.subtypes || "").split(",").filter(Boolean).map((s) => s.toLowerCase());
       if (!subs.some((s) => s.includes(f.subtype.toLowerCase()))) pass = false;
     }
 
     if (pass && f.format) {
-      const fmtEdges = edges.filter(
-        (e) => e.data.source === d.id && e.data.rel === "LEGAL_IN"
-      );
-      const fmts = fmtEdges.map((e) => {
-        const target = nodeMap[e.data.target];
-        return target ? target.data.label.toLowerCase() : "";
-      });
+      const fmts = (d.formats || "").split(",").filter(Boolean).map((fn) => fn.toLowerCase());
       if (!fmts.some((fn) => fn.includes(f.format.toLowerCase()))) pass = false;
     }
 
