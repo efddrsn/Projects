@@ -167,7 +167,7 @@ function cyStyle() {
       style: { "line-color": "#f85149", "target-arrow-color": "#f85149" },
     },
     {
-      selector: "edge[rel='HAS_TRIGGER']",
+      selector: "edge[rel='TRIGGERS']",
       style: {
         "line-color": "#79c0ff",
         "target-arrow-color": "#79c0ff",
@@ -175,11 +175,19 @@ function cyStyle() {
       },
     },
     {
-      selector: "edge[rel='SHARED_TRIGGER']",
+      selector: "edge[rel='IS_TRIGGERED_BY']",
+      style: {
+        "line-color": "#58a6ff",
+        "target-arrow-color": "#58a6ff",
+        "line-style": "dashed",
+      },
+    },
+    {
+      selector: "edge[rel='TRIGGER_LINK']",
       style: {
         "line-color": "#79c0ff",
         "target-arrow-color": "#79c0ff",
-        "target-arrow-shape": "none",
+        "target-arrow-shape": "triangle",
         "line-style": "solid",
         width: 1.5,
         opacity: 0.6,
@@ -374,6 +382,86 @@ function exitLocalMode() {
   localMode = false;
   localElements = null;
   document.getElementById("localModeBanner").classList.add("hidden");
+}
+
+function filterLocalByView(elements, rel, nodeType) {
+  if (!rel && !nodeType) return elements;
+
+  const nodeMap = {};
+  const edges = [];
+  for (const el of elements) {
+    if (el.group === "nodes") nodeMap[el.data.id] = el;
+    else edges.push(el);
+  }
+
+  let filteredEdges = rel ? edges.filter((e) => e.data.rel === rel) : edges;
+
+  const nodeIds = new Set();
+  for (const e of filteredEdges) {
+    nodeIds.add(e.data.source);
+    nodeIds.add(e.data.target);
+  }
+
+  if (nodeType) {
+    const anchorNodes = new Set();
+    for (const nid of nodeIds) {
+      if (nodeMap[nid] && nodeMap[nid].data.node_type === nodeType) {
+        anchorNodes.add(nid);
+      }
+    }
+    filteredEdges = filteredEdges.filter(
+      (e) => anchorNodes.has(e.data.source) || anchorNodes.has(e.data.target)
+    );
+    nodeIds.clear();
+    for (const e of filteredEdges) {
+      nodeIds.add(e.data.source);
+      nodeIds.add(e.data.target);
+    }
+  }
+
+  const result = [];
+  for (const nid of nodeIds) {
+    if (nodeMap[nid]) result.push(nodeMap[nid]);
+  }
+  result.push(...filteredEdges);
+  return result;
+}
+
+async function reloadCurrentView() {
+  const rel = document.getElementById("viewRel").value;
+  const nt = document.getElementById("viewNodeType").value;
+  const minWeight = parseFloat(document.getElementById("weightSlider").value);
+
+  showLoading("Loading view…");
+  try {
+    let url;
+    if (rel === "CARDS_BY_TRIGGER") {
+      url = "/api/graph/cards-by-trigger";
+    } else {
+      const params = new URLSearchParams();
+      if (rel) params.set("rel", rel);
+      if (nt) params.set("node_type", nt);
+      if (minWeight > 1) params.set("min_weight", minWeight);
+      url = params.toString() ? `/api/graph?${params}` : "/api/graph";
+    }
+
+    let elements = await fetchJSON(url);
+
+    if (hasActiveFilters()) {
+      elements = applyClientFilters(elements);
+    }
+
+    if (!elements.length) {
+      toast("No elements match current view settings.");
+      hideLoading();
+      return;
+    }
+
+    renderGraph(elements);
+  } catch (e) {
+    toast("Failed to load view: " + e.message);
+  }
+  hideLoading();
 }
 
 function filterLocalElements(activeColors, type, keyword, subtype, format) {
@@ -660,7 +748,7 @@ function setupSidebar() {
 
   document.getElementById("btnExitLocal").addEventListener("click", () => {
     exitLocalMode();
-    loadInitialView();
+    reloadCurrentView();
   });
 }
 
@@ -883,7 +971,53 @@ function setupFilters() {
     const minWeight = parseFloat(weightSlider.value);
 
     if (localMode) {
-      exitLocalMode();
+      showLoading("Updating local view…");
+      try {
+        let filtered;
+
+        if (rel === "CARDS_BY_TRIGGER") {
+          const localNodeIds = new Set(
+            localElements.filter((e) => e.group === "nodes").map((e) => e.data.id)
+          );
+          const triggerData = await fetchJSON("/api/graph/cards-by-trigger");
+          const relevantEdges = triggerData.filter(
+            (e) =>
+              e.group === "edges" &&
+              (localNodeIds.has(e.data.source) || localNodeIds.has(e.data.target))
+          );
+          const neededNodeIds = new Set();
+          for (const e of relevantEdges) {
+            neededNodeIds.add(e.data.source);
+            neededNodeIds.add(e.data.target);
+          }
+          filtered = [
+            ...triggerData.filter(
+              (e) => e.group === "nodes" && neededNodeIds.has(e.data.id)
+            ),
+            ...relevantEdges,
+          ];
+        } else {
+          filtered = filterLocalByView(localElements, rel, nt);
+        }
+
+        if (hasActiveFilters()) {
+          filtered = applyClientFilters(filtered);
+        }
+
+        if (!filtered.length) {
+          toast("No elements match current view in this neighborhood.");
+          hideLoading();
+          return;
+        }
+
+        renderGraph(filtered);
+        toast("View updated within neighborhood.");
+      } catch (e) {
+        toast("View update failed: " + e.message);
+      }
+      hideLoading();
+      closeSidebarOnMobile();
+      return;
     }
 
     showLoading("Updating view…");

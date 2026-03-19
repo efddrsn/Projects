@@ -27,7 +27,8 @@ Edge types (relationships):
   Card  -[HAS_MANA_VALUE]->  ManaValue
   Card  -[PRODUCES_MANA]->   Color  (for lands / mana dorks)
   Card  -[SYNERGY]->         Card   (shared keywords / subtypes)
-  Card  -[HAS_TRIGGER]->     Trigger (triggered ability event)
+  Card  -[TRIGGERS]->        Trigger (card produces/enables this event)
+  Card  -[IS_TRIGGERED_BY]-> Trigger (card has triggered ability for event)
 """
 
 import re
@@ -46,32 +47,28 @@ KNOWN_CARD_TYPES = {
 
 MANA_SYMBOL_RE = re.compile(r"\{([WUBRGC])\}")
 
-TRIGGER_PATTERNS = {
+TRIGGER_RESPONSE_PATTERNS = {
     "ETB": [
-        re.compile(r"enters the battlefield", re.I),
-        re.compile(r"enters under your control", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,40}enters? (?:the battlefield|under)", re.I),
     ],
     "Dies": [
-        re.compile(r"\bdies\b", re.I),
-        re.compile(r"put into (?:a |your )?graveyard from the battlefield", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,30}\bdies\b", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,40}put into .{0,10}graveyard from the battlefield", re.I),
     ],
     "LTB": [
-        re.compile(r"leaves the battlefield", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,40}leaves the battlefield", re.I),
     ],
     "Attack": [
-        re.compile(r"whenever .{0,30}attacks", re.I),
-        re.compile(r"when .{0,20}attacks", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,30}attacks?\b", re.I),
     ],
     "Combat Damage": [
-        re.compile(r"deals combat damage", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,40}deals combat damage", re.I),
     ],
     "Damage": [
-        re.compile(r"deals? (?:damage|.{0,15}damage)", re.I),
-        re.compile(r"is dealt damage", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,40}(?:deals?|is dealt) damage", re.I),
     ],
     "Spell Cast": [
-        re.compile(r"(?:when|whenever) (?:you|a player) cast", re.I),
-        re.compile(r"whenever .{0,20}cast .{0,15}spell", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,30}casts?\b", re.I),
     ],
     "Upkeep": [
         re.compile(r"(?:at the )?beginning of (?:your |each )?upkeep", re.I),
@@ -80,26 +77,62 @@ TRIGGER_PATTERNS = {
         re.compile(r"(?:at the )?beginning of (?:your |each |the )?end step", re.I),
     ],
     "Draw": [
-        re.compile(r"whenever .{0,20}draws? a card", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,20}draws? a card", re.I),
     ],
     "Discard": [
-        re.compile(r"whenever .{0,20}discards?", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,20}discards?", re.I),
     ],
     "Sacrifice": [
-        re.compile(r"whenever .{0,20}sacrifices?", re.I),
-        re.compile(r"sacrifice (?:a|an|this)", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,30}(?:is )?sacrifice", re.I),
     ],
     "Life Gain": [
-        re.compile(r"whenever you gain life", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,20}gains? life", re.I),
     ],
     "Life Loss": [
-        re.compile(r"whenever .{0,20}loses? life", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,20}loses? life", re.I),
     ],
     "Token": [
-        re.compile(r"create[s]? .{0,30}token", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,30}creates? .{0,20}token", re.I),
     ],
     "Mill": [
-        re.compile(r"(?:mill|put .{0,30}into .{0,10}graveyard from .{0,10}library)", re.I),
+        re.compile(r"(?:when|whenever)\b.{0,30}(?:mills?|cards? .{0,20}put into .{0,10}graveyard from .{0,10}library)", re.I),
+    ],
+}
+
+TRIGGER_SOURCE_PATTERNS = {
+    "ETB": [
+        re.compile(r"create[s]? .{0,30}tokens?", re.I),
+        re.compile(r"put .{0,40}onto the battlefield", re.I),
+        re.compile(r"return .{0,40}to the battlefield", re.I),
+    ],
+    "Dies": [
+        re.compile(r"destroy (?:target |all |each )?(?:\w+ )?(?:creature|permanent)", re.I),
+    ],
+    "Sacrifice": [
+        re.compile(r"sacrifice (?:a |an |another )", re.I),
+    ],
+    "Discard": [
+        re.compile(r"(?:target |each )?(?:player|opponent) discards?", re.I),
+        re.compile(r"discard (?:a |your |their |\d+ )", re.I),
+    ],
+    "Draw": [
+        re.compile(r"(?:target (?:player|opponent) )?draws? (?:a |two |three |\d+ )?cards?", re.I),
+    ],
+    "Life Gain": [
+        re.compile(r"gains? (?:\d+|X) life", re.I),
+        re.compile(r"\blifelink\b", re.I),
+    ],
+    "Life Loss": [
+        re.compile(r"(?:loses?|lose) (?:\d+|X) life", re.I),
+    ],
+    "Damage": [
+        re.compile(r"deals? (?:\d+|X) damage", re.I),
+    ],
+    "Token": [
+        re.compile(r"create[s]? .{0,30}tokens?", re.I),
+    ],
+    "Mill": [
+        re.compile(r"mills? (?:\d+|X)", re.I),
     ],
 }
 
@@ -269,8 +302,8 @@ def build_graph(cards):
             if sym in COLOR_MAP and "add" in oracle.lower():
                 G.add_edge(f"card:{card_id}", f"color:{sym}", rel="PRODUCES_MANA", weight=1)
 
-        # Trigger events
-        for trigger_key, patterns in TRIGGER_PATTERNS.items():
+        # Trigger events – responders (cards with triggered abilities)
+        for trigger_key, patterns in TRIGGER_RESPONSE_PATTERNS.items():
             for pat in patterns:
                 if pat.search(oracle):
                     nid = f"trigger:{trigger_key}"
@@ -279,7 +312,20 @@ def build_graph(cards):
                                    label=TRIGGER_LABELS.get(trigger_key, trigger_key),
                                    node_type="Trigger",
                                    trigger_key=trigger_key)
-                    G.add_edge(f"card:{card_id}", nid, rel="HAS_TRIGGER", weight=1)
+                    G.add_edge(f"card:{card_id}", nid, rel="IS_TRIGGERED_BY", weight=1)
+                    break
+
+        # Trigger events – sources (cards that produce/enable events)
+        for trigger_key, patterns in TRIGGER_SOURCE_PATTERNS.items():
+            for pat in patterns:
+                if pat.search(oracle):
+                    nid = f"trigger:{trigger_key}"
+                    if nid not in G:
+                        G.add_node(nid,
+                                   label=TRIGGER_LABELS.get(trigger_key, trigger_key),
+                                   node_type="Trigger",
+                                   trigger_key=trigger_key)
+                    G.add_edge(f"card:{card_id}", nid, rel="TRIGGERS", weight=1)
                     break
 
     _add_synergy_edges(G)
@@ -336,10 +382,10 @@ def _shared_traits(G, a, b):
 
 def _add_edge_weights(G):
     """Enhance edge weights: SYNERGY weight is already set by shared trait count.
-    For taxonomy edges (HAS_SUBTYPE, HAS_KEYWORD, HAS_TRIGGER), weight is
+    For taxonomy edges (HAS_SUBTYPE, HAS_KEYWORD, TRIGGERS, IS_TRIGGERED_BY), weight is
     inversely proportional to the target's in-degree (rarer = stronger).
     """
-    boost_rels = {"HAS_SUBTYPE", "HAS_KEYWORD", "HAS_TRIGGER"}
+    boost_rels = {"HAS_SUBTYPE", "HAS_KEYWORD", "TRIGGERS", "IS_TRIGGERED_BY"}
     in_degrees = {}
     for _, t, d in G.edges(data=True):
         if d.get("rel") in boost_rels:
