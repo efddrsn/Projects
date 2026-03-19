@@ -217,16 +217,16 @@ def build_graph(cards):
             "node_type": "Card",
             "label": name,
             "oracle_id": card_id,
-            "mana_cost": card.get("mana_cost", ""),
-            "cmc": card.get("cmc", 0),
+            "mana_cost": card.get("mana_cost") or "",
+            "cmc": card.get("cmc") or 0,
             "color_identity": ",".join(sorted(color_identity)),
-            "oracle_text": card.get("oracle_text", ""),
-            "power": card.get("power", ""),
-            "toughness": card.get("toughness", ""),
-            "loyalty": card.get("loyalty", ""),
-            "rarity": card.get("rarity", ""),
-            "set_code": card.get("set", ""),
-            "set_name": card.get("set_name", ""),
+            "oracle_text": card.get("oracle_text") or "",
+            "power": card.get("power") or "",
+            "toughness": card.get("toughness") or "",
+            "loyalty": card.get("loyalty") or "",
+            "rarity": card.get("rarity") or "",
+            "set_code": card.get("set") or "",
+            "set_name": card.get("set_name") or "",
             "image": image,
             "type_line": type_line,
             "card_types": ",".join(card_types),
@@ -271,7 +271,7 @@ def build_graph(cards):
         if set_code:
             nid = f"set:{set_code}"
             if nid not in G:
-                G.add_node(nid, label=card.get("set_name", set_code), node_type="Set", code=set_code)
+                G.add_node(nid, label=card.get("set_name") or set_code, node_type="Set", code=set_code)
             G.add_edge(f"card:{card_id}", nid, rel="IN_SET", weight=1)
 
         # Rarity
@@ -283,7 +283,7 @@ def build_graph(cards):
             G.add_edge(f"card:{card_id}", nid, rel="HAS_RARITY", weight=1)
 
         # Mana value bucket
-        cmc = int(card.get("cmc", 0))
+        cmc = int(card.get("cmc") or 0)
         nid = f"mv:{cmc}"
         if nid not in G:
             G.add_node(nid, label=f"MV {cmc}", node_type="ManaValue", value=cmc)
@@ -297,8 +297,7 @@ def build_graph(cards):
                     G.add_node(nid, label=fmt.replace("_", " ").title(), node_type="Format")
                 G.add_edge(f"card:{card_id}", nid, rel="LEGAL_IN", weight=1)
 
-        # Mana production (heuristic: look for "Add {X}" in oracle text)
-        oracle = card.get("oracle_text", "") or ""
+        oracle = card.get("oracle_text") or ""
         for sym in MANA_SYMBOL_RE.findall(oracle):
             if sym in COLOR_MAP and "add" in oracle.lower():
                 G.add_edge(f"card:{card_id}", f"color:{sym}", rel="PRODUCES_MANA", weight=1)

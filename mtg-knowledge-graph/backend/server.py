@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import tempfile
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
@@ -23,6 +24,21 @@ _graph = None  # in-memory NetworkX graph
 _elements = None  # cached Cytoscape.js elements
 
 
+def _safe_write_json(path, data):
+    """Write JSON atomically via temp file + rename to prevent corruption."""
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _ensure_data():
     global _graph, _elements
     if _graph is not None:
@@ -31,28 +47,45 @@ def _ensure_data():
     os.makedirs(DATA_DIR, exist_ok=True)
 
     if os.path.exists(GRAPH_CACHE):
-        with open(GRAPH_CACHE) as f:
-            _elements = json.load(f)
-        _graph = _rebuild_nx(_elements)
-        return
+        try:
+            with open(GRAPH_CACHE) as f:
+                _elements = json.load(f)
+            if not isinstance(_elements, list) or len(_elements) == 0:
+                raise ValueError("graph cache is empty or malformed")
+            _graph = _rebuild_nx(_elements)
+            return
+        except (json.JSONDecodeError, ValueError, KeyError) as exc:
+            print(f"  ⚠ corrupt graph cache, rebuilding: {exc}", file=sys.stderr)
+            os.remove(GRAPH_CACHE)
 
-    print("Fetching cards from Scryfall API…", file=sys.stderr)
-    if os.path.exists(CARDS_CACHE):
-        with open(CARDS_CACHE) as f:
-            cards = json.load(f)
-    else:
-        cards = fetch_subset()
-        with open(CARDS_CACHE, "w") as f:
-            json.dump(cards, f)
+    cards = _load_cards()
     print(f"  → {len(cards)} cards loaded", file=sys.stderr)
 
     _graph = build_graph(cards)
     _elements = graph_to_cytoscape(_graph)
 
-    with open(GRAPH_CACHE, "w") as f:
-        json.dump(_elements, f)
+    _safe_write_json(GRAPH_CACHE, _elements)
     print(f"  → graph built: {_graph.number_of_nodes()} nodes, {_graph.number_of_edges()} edges",
           file=sys.stderr)
+
+
+def _load_cards():
+    """Load cards from cache or fetch from Scryfall, with cache-corruption recovery."""
+    if os.path.exists(CARDS_CACHE):
+        try:
+            with open(CARDS_CACHE) as f:
+                cards = json.load(f)
+            if isinstance(cards, list) and len(cards) > 0:
+                return cards
+            raise ValueError("cards cache is empty or malformed")
+        except (json.JSONDecodeError, ValueError) as exc:
+            print(f"  ⚠ corrupt cards cache, re-fetching: {exc}", file=sys.stderr)
+            os.remove(CARDS_CACHE)
+
+    print("Fetching cards from Scryfall API…", file=sys.stderr)
+    cards = fetch_subset()
+    _safe_write_json(CARDS_CACHE, cards)
+    return cards
 
 
 def _rebuild_nx(elements):
@@ -93,7 +126,11 @@ def app_js():
 @app.route("/api/graph")
 def api_graph():
     """Return full graph as Cytoscape.js elements (optionally filtered)."""
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load graph data: {exc}"}), 500
+
     node_type = request.args.get("node_type")
     rel = request.args.get("rel")
     min_weight = request.args.get("min_weight", type=float)
@@ -107,14 +144,20 @@ def api_graph():
 
 @app.route("/api/stats")
 def api_stats():
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load graph data: {exc}"}), 500
     return jsonify(graph_stats(_graph))
 
 
 @app.route("/api/node/<path:node_id>")
 def api_node(node_id):
     """Return a node and its immediate neighborhood."""
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load graph data: {exc}"}), 500
     if node_id not in _graph:
         return jsonify({"error": "Node not found"}), 404
 
@@ -151,14 +194,17 @@ def api_node(node_id):
 @app.route("/api/search")
 def api_search():
     """Search nodes by label substring."""
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load graph data: {exc}"}), 500
     q = request.args.get("q", "").lower()
     if not q:
         return jsonify([])
 
     matches = []
     for nid, data in _graph.nodes(data=True):
-        label = data.get("label", "")
+        label = data.get("label") or ""
         if q in label.lower():
             matches.append({"id": nid, **data})
     matches.sort(key=lambda x: x.get("label", ""))
@@ -180,7 +226,10 @@ def api_query():
       min_cmc / max_cmc – mana value range
     Returns matching card nodes.
     """
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load graph data: {exc}"}), 500
     candidates = set()
     first = True
 
@@ -235,7 +284,10 @@ def api_query():
 @app.route("/api/path")
 def api_path():
     """Find shortest path between two nodes."""
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load graph data: {exc}"}), 500
     source = request.args.get("source")
     target = request.args.get("target")
     if not source or not target:
@@ -273,7 +325,10 @@ def api_path():
 @app.route("/api/neighbors")
 def api_neighbors():
     """Get neighbors of a node filtered by relationship type."""
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load graph data: {exc}"}), 500
     node_id = request.args.get("node_id")
     rel = request.args.get("rel")
     if not node_id:
@@ -299,7 +354,10 @@ def api_cards_by_trigger():
     Cards that produce/enable a trigger event (sources) link to cards with
     triggered abilities that respond to that event (responders).
     Multiple shared triggers between the same pair are aggregated."""
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load graph data: {exc}"}), 500
 
     MAX_EDGES_PER_TRIGGER = 2000
 
@@ -361,7 +419,10 @@ def api_refresh():
     for f in [CARDS_CACHE, GRAPH_CACHE]:
         if os.path.exists(f):
             os.remove(f)
-    _ensure_data()
+    try:
+        _ensure_data()
+    except Exception as exc:
+        return jsonify({"error": f"Failed to refresh graph data: {exc}"}), 500
     return jsonify({"status": "ok", "stats": graph_stats(_graph)})
 
 
