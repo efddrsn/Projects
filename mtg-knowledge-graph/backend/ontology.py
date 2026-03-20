@@ -12,7 +12,7 @@ Node types:
   Rarity      – common, uncommon, rare, mythic
   Format      – Standard, Modern, Pioneer, Legacy, Vintage, Commander, …
   ManaValue   – integer converted mana cost bucket (0, 1, 2, …)
-  Trigger     – ETB, Dies, Attack, CombatDamage, SpellCast, …
+  Trigger     – ETB, Landfall, Dies, DealtDamage, Attack, SpellCast, …
 
 Edge types (relationships):
   Card  -[HAS_COLOR]->       Color
@@ -49,7 +49,11 @@ MANA_SYMBOL_RE = re.compile(r"\{([WUBRGC])\}")
 
 TRIGGER_RESPONSE_PATTERNS = {
     "ETB": [
-        re.compile(r"(?:when|whenever)\b.{0,40}enters? (?:the battlefield|under)", re.I),
+        re.compile(r"(?:when|whenever)\s+(?:a|an|another)\s+(?!land\b).{0,40}enters? (?:the battlefield|under)", re.I),
+    ],
+    "Landfall": [
+        re.compile(r"(?:when|whenever)\s+a land.{0,30}enters?\b", re.I),
+        re.compile(r"\blandfall\b", re.I),
     ],
     "Dies": [
         re.compile(r"(?:when|whenever)\b.{0,30}\bdies\b", re.I),
@@ -64,8 +68,8 @@ TRIGGER_RESPONSE_PATTERNS = {
     "Combat Damage": [
         re.compile(r"(?:when|whenever)\b.{0,40}deals combat damage", re.I),
     ],
-    "Damage": [
-        re.compile(r"(?:when|whenever)\b.{0,40}(?:deals?|is dealt) damage", re.I),
+    "Dealt Damage": [
+        re.compile(r"(?:when|whenever)\b.{0,40}is dealt damage", re.I),
     ],
     "Spell Cast": [
         re.compile(r"(?:when|whenever)\b.{0,30}casts?\b", re.I),
@@ -83,7 +87,7 @@ TRIGGER_RESPONSE_PATTERNS = {
         re.compile(r"(?:when|whenever)\b.{0,20}discards?", re.I),
     ],
     "Sacrifice": [
-        re.compile(r"(?:when|whenever)\b.{0,30}(?:is )?sacrifice", re.I),
+        re.compile(r"(?:when|whenever)\b[^,\n]{0,30}(?:is )?sacrifice", re.I),
     ],
     "Life Gain": [
         re.compile(r"(?:when|whenever)\b.{0,20}gains? life", re.I),
@@ -92,7 +96,7 @@ TRIGGER_RESPONSE_PATTERNS = {
         re.compile(r"(?:when|whenever)\b.{0,20}loses? life", re.I),
     ],
     "Token": [
-        re.compile(r"(?:when|whenever)\b.{0,30}creates? .{0,20}token", re.I),
+        re.compile(r"(?:when|whenever)\b[^,\n]{0,30}creates? .{0,20}token", re.I),
     ],
     "Mill": [
         re.compile(r"(?:when|whenever)\b.{0,30}(?:mills?|cards? .{0,20}put into .{0,10}graveyard from .{0,10}library)", re.I),
@@ -102,8 +106,12 @@ TRIGGER_RESPONSE_PATTERNS = {
 TRIGGER_SOURCE_PATTERNS = {
     "ETB": [
         re.compile(r"create[s]? .{0,30}tokens?", re.I),
-        re.compile(r"put .{0,40}onto the battlefield", re.I),
-        re.compile(r"return .{0,40}to the battlefield", re.I),
+        re.compile(r"put .{0,40}(?:creature|permanent|artifact|enchantment).{0,20}onto the battlefield", re.I),
+        re.compile(r"return .{0,40}(?:creature|permanent|artifact|enchantment).{0,20}to the battlefield", re.I),
+    ],
+    "Landfall": [
+        re.compile(r"put .{0,30}land.{0,20}onto the battlefield", re.I),
+        re.compile(r"search .{0,40}land.{0,30}onto the battlefield", re.I),
     ],
     "Dies": [
         re.compile(r"destroy (?:target |all |each )?(?:\w+ )?(?:creature|permanent)", re.I),
@@ -120,12 +128,11 @@ TRIGGER_SOURCE_PATTERNS = {
     ],
     "Life Gain": [
         re.compile(r"gains? (?:\d+|X) life", re.I),
-        re.compile(r"\blifelink\b", re.I),
     ],
     "Life Loss": [
         re.compile(r"(?:loses?|lose) (?:\d+|X) life", re.I),
     ],
-    "Damage": [
+    "Dealt Damage": [
         re.compile(r"deals? (?:\d+|X) damage", re.I),
     ],
     "Token": [
@@ -138,11 +145,12 @@ TRIGGER_SOURCE_PATTERNS = {
 
 TRIGGER_LABELS = {
     "ETB": "Enters the Battlefield",
+    "Landfall": "Landfall",
     "Dies": "Dies",
     "LTB": "Leaves the Battlefield",
     "Attack": "Attacks",
     "Combat Damage": "Deals Combat Damage",
-    "Damage": "Deals/Takes Damage",
+    "Dealt Damage": "Is Dealt Damage",
     "Spell Cast": "Spell Cast",
     "Upkeep": "Upkeep Trigger",
     "End Step": "End Step Trigger",
@@ -327,6 +335,16 @@ def build_graph(cards):
                                    trigger_key=trigger_key)
                     G.add_edge(f"card:{card_id}", nid, rel="TRIGGERS", weight=1)
                     break
+
+        # Lifelink keyword → Life Gain source (only via keyword, not oracle text mentions)
+        if "Lifelink" in keywords_list:
+            nid = "trigger:Life Gain"
+            if nid not in G:
+                G.add_node(nid,
+                           label=TRIGGER_LABELS.get("Life Gain", "Life Gain"),
+                           node_type="Trigger",
+                           trigger_key="Life Gain")
+            G.add_edge(f"card:{card_id}", nid, rel="TRIGGERS", weight=1)
 
     _add_synergy_edges(G)
     _add_edge_weights(G)
