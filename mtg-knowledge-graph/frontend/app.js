@@ -167,22 +167,6 @@ function cyStyle() {
       style: { "line-color": "#f85149", "target-arrow-color": "#f85149" },
     },
     {
-      selector: "edge[rel='TRIGGERS']",
-      style: {
-        "line-color": "#79c0ff",
-        "target-arrow-color": "#79c0ff",
-        "line-style": "dotted",
-      },
-    },
-    {
-      selector: "edge[rel='IS_TRIGGERED_BY']",
-      style: {
-        "line-color": "#58a6ff",
-        "target-arrow-color": "#58a6ff",
-        "line-style": "dashed",
-      },
-    },
-    {
       selector: "edge[rel='TRIGGER_LINK']",
       style: {
         "line-color": "#79c0ff",
@@ -328,11 +312,11 @@ async function loadStats() {
 
 async function loadInitialView() {
   exitLocalMode();
-  showLoading("Loading cards linked by triggers…");
+  showLoading("Loading trigger connections…");
   try {
     const elements = await fetchJSON("/api/graph/cards-by-trigger");
     renderGraph(elements);
-    toast("Showing cards linked through shared triggers. Use filters to explore.");
+    toast("Showing card-to-card trigger connections. Use filters to explore.");
   } catch (e) {
     toast("Failed to load graph: " + e.message);
   }
@@ -1047,7 +1031,7 @@ function setupFilters() {
       renderGraph(elements);
       toast(
         rel === "CARDS_BY_TRIGGER"
-          ? "Showing cards linked through shared triggers"
+          ? "Showing card-to-card trigger connections"
           : rel || nt
             ? `Filtered: ${rel || "all rels"} × ${nt || "all types"}`
             : "Showing full graph"
