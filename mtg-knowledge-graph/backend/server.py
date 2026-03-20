@@ -9,7 +9,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import networkx as nx
 
-from backend.scryfall import fetch_subset
+from backend.scryfall import fetch_subset, fetch_trigger_tags
 from backend.ontology import build_graph, graph_to_cytoscape, graph_stats
 
 app = Flask(__name__, static_folder=None)
@@ -18,6 +18,7 @@ CORS(app)
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 CARDS_CACHE = os.path.join(DATA_DIR, "cards.json")
+OTAGS_CACHE = os.path.join(DATA_DIR, "otags.json")
 GRAPH_CACHE = os.path.join(DATA_DIR, "graph.json")
 
 _graph = None  # in-memory NetworkX graph
@@ -61,7 +62,9 @@ def _ensure_data():
     cards = _load_cards()
     print(f"  → {len(cards)} cards loaded", file=sys.stderr)
 
-    _graph = build_graph(cards)
+    otag_sets = _load_otags(cards)
+
+    _graph = build_graph(cards, otag_sets=otag_sets)
     _elements = graph_to_cytoscape(_graph)
 
     _safe_write_json(GRAPH_CACHE, _elements)
@@ -86,6 +89,28 @@ def _load_cards():
     cards = fetch_subset()
     _safe_write_json(CARDS_CACHE, cards)
     return cards
+
+
+def _load_otags(cards):
+    """Load Scryfall oracle-tag sets from cache or fetch from API."""
+    if os.path.exists(OTAGS_CACHE):
+        try:
+            with open(OTAGS_CACHE) as f:
+                raw = json.load(f)
+            if isinstance(raw, dict) and raw:
+                return {k: set(v) for k, v in raw.items()}
+            raise ValueError("otags cache is empty or malformed")
+        except (json.JSONDecodeError, ValueError) as exc:
+            print(f"  ⚠ corrupt otags cache, re-fetching: {exc}", file=sys.stderr)
+            os.remove(OTAGS_CACHE)
+
+    card_ids = {c.get("oracle_id", c["id"]) for c in cards}
+    print("Fetching trigger tags from Scryfall API…", file=sys.stderr)
+    otag_sets = fetch_trigger_tags(card_oracle_ids=card_ids)
+
+    serializable = {k: sorted(v) for k, v in otag_sets.items()}
+    _safe_write_json(OTAGS_CACHE, serializable)
+    return otag_sets
 
 
 def _rebuild_nx(elements):
@@ -416,7 +441,7 @@ def api_refresh():
     global _graph, _elements
     _graph = None
     _elements = None
-    for f in [CARDS_CACHE, GRAPH_CACHE]:
+    for f in [CARDS_CACHE, OTAGS_CACHE, GRAPH_CACHE]:
         if os.path.exists(f):
             os.remove(f)
     try:

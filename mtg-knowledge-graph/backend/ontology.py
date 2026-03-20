@@ -195,9 +195,17 @@ def _parse_type_line(type_line):
     return supertypes, card_types, subtypes
 
 
-def build_graph(cards):
-    """Build a NetworkX knowledge graph from Scryfall card objects."""
+def build_graph(cards, otag_sets=None):
+    """Build a NetworkX knowledge graph from Scryfall card objects.
+
+    *otag_sets* is an optional dict mapping tag keys like "resp:Dies" or
+    "src:Draw" to sets of oracle_ids.  When provided, these Scryfall
+    community-curated tags are used for trigger classification instead of
+    regex.  Regex patterns remain the fallback for trigger types without
+    an oracle tag.
+    """
     G = nx.MultiDiGraph()
+    otag_sets = otag_sets or {}
 
     for c in COLOR_MAP:
         G.add_node(f"color:{c}", label=COLOR_MAP[c], node_type="Color", code=c)
@@ -312,29 +320,47 @@ def build_graph(cards):
 
         # Trigger events – responders (cards with triggered abilities)
         for trigger_key, patterns in TRIGGER_RESPONSE_PATTERNS.items():
-            for pat in patterns:
-                if pat.search(oracle):
-                    nid = f"trigger:{trigger_key}"
-                    if nid not in G:
-                        G.add_node(nid,
-                                   label=TRIGGER_LABELS.get(trigger_key, trigger_key),
-                                   node_type="Trigger",
-                                   trigger_key=trigger_key)
-                    G.add_edge(f"card:{card_id}", nid, rel="IS_TRIGGERED_BY", weight=1)
-                    break
+            otag_key = f"resp:{trigger_key}"
+            matched = False
+
+            if otag_key in otag_sets:
+                matched = card_id in otag_sets[otag_key]
+            else:
+                for pat in patterns:
+                    if pat.search(oracle):
+                        matched = True
+                        break
+
+            if matched:
+                nid = f"trigger:{trigger_key}"
+                if nid not in G:
+                    G.add_node(nid,
+                               label=TRIGGER_LABELS.get(trigger_key, trigger_key),
+                               node_type="Trigger",
+                               trigger_key=trigger_key)
+                G.add_edge(f"card:{card_id}", nid, rel="IS_TRIGGERED_BY", weight=1)
 
         # Trigger events – sources (cards that produce/enable events)
         for trigger_key, patterns in TRIGGER_SOURCE_PATTERNS.items():
-            for pat in patterns:
-                if pat.search(oracle):
-                    nid = f"trigger:{trigger_key}"
-                    if nid not in G:
-                        G.add_node(nid,
-                                   label=TRIGGER_LABELS.get(trigger_key, trigger_key),
-                                   node_type="Trigger",
-                                   trigger_key=trigger_key)
-                    G.add_edge(f"card:{card_id}", nid, rel="TRIGGERS", weight=1)
-                    break
+            otag_key = f"src:{trigger_key}"
+            matched = False
+
+            if otag_key in otag_sets:
+                matched = card_id in otag_sets[otag_key]
+            else:
+                for pat in patterns:
+                    if pat.search(oracle):
+                        matched = True
+                        break
+
+            if matched:
+                nid = f"trigger:{trigger_key}"
+                if nid not in G:
+                    G.add_node(nid,
+                               label=TRIGGER_LABELS.get(trigger_key, trigger_key),
+                               node_type="Trigger",
+                               trigger_key=trigger_key)
+                G.add_edge(f"card:{card_id}", nid, rel="TRIGGERS", weight=1)
 
         # Lifelink keyword → Life Gain source (only via keyword, not oracle text mentions)
         if "Lifelink" in keywords_list:
