@@ -21,14 +21,27 @@ async function rateLimitedFetch(
   }
   lastRequestTime = Date.now();
 
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "User-Agent": "MTG-MCP-Server/1.0",
-      Accept: "application/json",
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        "User-Agent": "MTG-MCP-Server/1.0",
+        Accept: "application/json",
+        ...init?.headers,
+      },
+    });
+  } catch (err: any) {
+    const cause = err?.cause?.code || err?.code || "";
+    if (cause.includes("TIMEOUT") || err.message?.includes("Timeout")) {
+      throw new Error(
+        `Connection to Scryfall timed out. The server may be waking from cold start — please retry in a few seconds.`
+      );
+    }
+    throw new Error(
+      `Failed to connect to Scryfall API: ${err.message}. If this persists, the server may be starting up — retry shortly.`
+    );
+  }
 
   if (response.status === 429) {
     // Rate limited - wait and retry once
