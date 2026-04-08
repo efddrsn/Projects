@@ -51,6 +51,11 @@ export function createServer(): McpServer {
   const server = new McpServer({
     name: "mtg-mcp-server",
     version: "1.0.0",
+    description:
+      "MCP server providing full access to Scryfall and other Magic: The Gathering APIs.\n\n" +
+      "⚠️ Este servidor roda em Render free tier (https://mcpmtg.onrender.com).\n" +
+      "Instâncias ficam inativas após 15min sem uso e levam ~30s para cold start.\n" +
+      "Se uma tool retornar erro genérico na primeira chamada, aguarde e tente novamente.",
   });
 
   // =====================
