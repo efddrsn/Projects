@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  paperclip:
+    image: ghcr.io/paperclipai/paperclip:latest
+    ports:
+      - "3100:3100"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3100"
+      SERVE_UI: "true"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-change-me-in-production}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+    volumes:
+      - paperclip-data:/paperclip
+    restart: unless-stopped
+
+volumes:
+  paperclip-data:
