@@ -83,7 +83,8 @@ async def download_from_gdrive(url: str, timeout: float = 1800.0) -> Path:
                 content_start = first_chunk[:500]
 
                 if "text/html" in content_type or _is_html_response(content_start):
-                    html = (first_chunk + await response.aread()).decode("utf-8", errors="ignore")
+                    remaining = b"".join([chunk async for chunk in byte_iter])
+                    html = (first_chunk + remaining).decode("utf-8", errors="ignore")
 
                     if "<title>Sign in" in html or "accounts.google.com" in html:
                         raise RuntimeError(
