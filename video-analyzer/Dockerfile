@@ -17,6 +17,6 @@ WORKDIR /app/backend
 ENV VA_DATA_DIR=/app/data
 ENV VA_TEMP_DIR=/app/data/tmp
 
-EXPOSE 8000
+EXPOSE 8080
 
 CMD ["python", "run.py"]
