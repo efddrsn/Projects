@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -32,7 +33,7 @@ async def analyze_video(
     if not handler:
         raise ValueError(f"Unknown provider: {provider}. Use: google, openai, anthropic")
 
-    info = get_video_info(video_path)
+    info = await asyncio.to_thread(get_video_info, video_path)
     limits = get_model_limits(model)
     max_duration = limits["max_duration_seconds"]
     supports_video = limits["supports_video_upload"]
@@ -48,9 +49,13 @@ async def analyze_video(
 
     if effective_duration <= max_duration and supports_video:
         if segment_start is not None or segment_end is not None:
-            chunks = split_video_into_chunks(
-                video_path, int(effective_duration) + 1,
-                overlap=0, segment_start=segment_start, segment_end=segment_end,
+            chunks = await asyncio.to_thread(
+                split_video_into_chunks,
+                video_path,
+                int(effective_duration) + 1,
+                0,
+                segment_start,
+                segment_end,
             )
             video_to_send = chunks[0].path if chunks else video_path
         else:
@@ -106,9 +111,13 @@ async def _sequential_summary_strategy(
     Process each chunk, carry forward accumulated context, then synthesize.
     Each chunk sees: original prompt + all prior chunk summaries, ensuring full context coverage.
     """
-    chunks = split_video_into_chunks(
-        video_path, chunk_duration, overlap=10,
-        segment_start=segment_start, segment_end=segment_end,
+    chunks = await asyncio.to_thread(
+        split_video_into_chunks,
+        video_path,
+        chunk_duration,
+        10,
+        segment_start,
+        segment_end,
     )
 
     if len(chunks) == 1:
@@ -118,7 +127,7 @@ async def _sequential_summary_strategy(
                 video_path=chunks[0].path, temperature=temperature, max_tokens=max_tokens,
             )
         else:
-            kf = extract_keyframes(chunks[0].path, max_frames=20)
+            kf = await asyncio.to_thread(extract_keyframes, chunks[0].path, 20)
             result = await handler(
                 api_key=api_key, model=model, prompt=prompt,
                 frames=kf.frames, frame_timestamps=kf.timestamps,
@@ -151,7 +160,7 @@ async def _sequential_summary_strategy(
                 video_path=chunk.path, temperature=temperature, max_tokens=max_tokens,
             )
         else:
-            kf = extract_keyframes(chunk.path, max_frames=15)
+            kf = await asyncio.to_thread(extract_keyframes, chunk.path, 15)
             summary = await handler(
                 api_key=api_key, model=model, prompt=chunk_prompt,
                 frames=kf.frames, frame_timestamps=kf.timestamps,
@@ -199,7 +208,7 @@ async def _keyframe_strategy(
     segment_start, segment_end, temperature, max_tokens,
 ):
     """Extract keyframes from the entire video and send as images."""
-    kf = extract_keyframes(video_path, max_frames=30)
+    kf = await asyncio.to_thread(extract_keyframes, video_path, 30)
 
     keyframe_prompt = (
         f"These are {len(kf.frames)} keyframes extracted from a video at regular intervals.\n\n"

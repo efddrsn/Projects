@@ -93,7 +93,18 @@ def split_video_into_chunks(
         chunk_path = chunk_dir / f"chunk_{index:04d}.mp4"
 
         if not chunk_path.exists():
-            subprocess.run(
+            # Try stream copy first for speed and zero quality loss; fall back to re-encode for compatibility.
+            copy_result = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-ss", str(current), "-i", str(video_path),
+                    "-t", str(chunk_end - current),
+                    "-c", "copy", "-movflags", "+faststart",
+                    str(chunk_path),
+                ],
+                capture_output=True,
+            )
+            if copy_result.returncode != 0 or not chunk_path.exists() or chunk_path.stat().st_size == 0:
+                subprocess.run(
                 [
                     "ffmpeg", "-y", "-ss", str(current), "-i", str(video_path),
                     "-t", str(chunk_end - current),
@@ -102,7 +113,7 @@ def split_video_into_chunks(
                     str(chunk_path),
                 ],
                 capture_output=True,
-            )
+                )
 
         chunks.append(VideoChunk(
             path=chunk_path,

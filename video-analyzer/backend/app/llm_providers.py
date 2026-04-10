@@ -1,6 +1,7 @@
 import base64
 import logging
 import json
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -42,7 +43,7 @@ async def analyze_with_google(
     parts = []
 
     if video_path and video_path.exists():
-        video_bytes = video_path.read_bytes()
+        video_bytes = await asyncio.to_thread(video_path.read_bytes)
         parts.append({"mime_type": "video/mp4", "data": video_bytes})
     elif frames:
         for i, frame in enumerate(frames):
@@ -86,7 +87,7 @@ async def analyze_with_openai(
             })
     elif video_path and video_path.exists():
         from app.video_processing import extract_keyframes
-        kf = extract_keyframes(video_path, max_frames=20)
+        kf = await asyncio.to_thread(extract_keyframes, video_path, 20)
         for i, frame in enumerate(kf.frames):
             b64 = base64.b64encode(frame).decode("utf-8")
             content.append({"type": "text", "text": f"Frame {i + 1} (t={kf.timestamps[i]:.1f}s):"})
@@ -134,7 +135,7 @@ async def analyze_with_anthropic(
             })
     elif video_path and video_path.exists():
         from app.video_processing import extract_keyframes
-        kf = extract_keyframes(video_path, max_frames=20)
+        kf = await asyncio.to_thread(extract_keyframes, video_path, 20)
         for i, frame in enumerate(kf.frames):
             b64 = base64.b64encode(frame).decode("utf-8")
             content.append({"type": "text", "text": f"Frame {i + 1} (t={kf.timestamps[i]:.1f}s):"})

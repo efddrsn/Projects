@@ -11,4 +11,5 @@ if __name__ == "__main__":
         host=settings.host,
         port=port,
         reload=settings.debug,
+        workers=1 if settings.debug else max(settings.web_concurrency, 1),
     )
