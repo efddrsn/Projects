@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     encryption_key: str = ""
 
-    max_video_size_mb: int = 500
+    max_video_size_mb: int = 2000
     max_video_duration_seconds: int = 7200  # 2 hours
 
     # Default chunk settings
