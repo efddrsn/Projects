@@ -44,6 +44,18 @@ app.add_middleware(
 
 app.include_router(router)
 
-frontend_path = Path(__file__).parent.parent.parent / "frontend"
+# Resolve frontend path: prefer the absolute container path, fall back to
+# the relative path derived from this file's location so local dev still works.
+_abs_frontend = Path("/app/frontend")
+_rel_frontend = Path(__file__).parent.parent.parent / "frontend"
+frontend_path = _abs_frontend if _abs_frontend.exists() else _rel_frontend
+
 if frontend_path.exists():
+    logger.info("Mounting frontend static files from %s", frontend_path)
     app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
+else:
+    logger.warning(
+        "Frontend directory not found at %s or %s — UI will not be served",
+        _abs_frontend,
+        _rel_frontend,
+    )
