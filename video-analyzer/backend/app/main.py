@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import init_db
+from app.mcp_routes import router as mcp_router
 from app.routes import router
 
 logging.basicConfig(
@@ -43,6 +44,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(mcp_router)
 
 # Resolve frontend path: prefer the absolute container path, fall back to
 # the relative path derived from this file's location so local dev still works.
