@@ -11,7 +11,6 @@ from app.video_processing import (
     get_model_limits,
 )
 from app.llm_providers import detect_provider, PROVIDER_HANDLERS
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +109,7 @@ async def _sequential_summary_strategy(
 ):
     """
     Process each chunk, carry forward accumulated context, then synthesize.
-    Each chunk sees: original prompt + a bounded prior-context window.
+    Each chunk sees: original prompt + all prior chunk summaries, ensuring full context coverage.
     """
     chunks = await asyncio.to_thread(
         split_video_into_chunks,
@@ -145,16 +144,8 @@ async def _sequential_summary_strategy(
         )
         if chunk_summaries:
             context_header += "PRIOR CONTEXT from earlier parts of this video:\n"
-            context_window = max(settings.max_context_summaries, 1)
-            prior_summaries = chunk_summaries[-context_window:]
-            skipped = len(chunk_summaries) - len(prior_summaries)
-            first_part_idx = skipped + 1
-            if skipped > 0:
-                context_header += (
-                    f"(Older summaries omitted for brevity: {skipped} earlier parts were already analyzed.)\n\n"
-                )
-            for i, s in enumerate(prior_summaries):
-                context_header += f"--- Part {first_part_idx + i} summary ---\n{s}\n\n"
+            for i, s in enumerate(chunk_summaries):
+                context_header += f"--- Part {i + 1} summary ---\n{s}\n\n"
 
         chunk_prompt = (
             f"{context_header}"
@@ -175,7 +166,7 @@ async def _sequential_summary_strategy(
                 frames=kf.frames, frame_timestamps=kf.timestamps,
                 temperature=temperature, max_tokens=max_tokens,
             )
-        chunk_summaries.append(summary[:settings.context_summary_max_chars])
+        chunk_summaries.append(summary)
         logger.info(f"Chunk {chunk.index + 1}/{chunk.total_chunks} analyzed")
 
     synthesis_prompt = (
