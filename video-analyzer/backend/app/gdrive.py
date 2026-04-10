@@ -72,41 +72,41 @@ async def download_from_gdrive(url: str, timeout: float = 1800.0) -> Path:
     async with httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(timeout, connect=30.0)) as client:
         for attempt_url in download_urls:
             logger.info(f"Trying download URL: {attempt_url}")
-            response = await client.get(attempt_url)
+            async with client.stream("GET", attempt_url) as response:
+                if response.status_code != 200:
+                    logger.warning(f"HTTP {response.status_code} from {attempt_url}")
+                    continue
 
-            if response.status_code != 200:
-                logger.warning(f"HTTP {response.status_code} from {attempt_url}")
-                continue
+                content_type = response.headers.get("content-type", "")
+                byte_iter = response.aiter_bytes(chunk_size=8192 * 16)
+                first_chunk = await anext(byte_iter, b"")
+                content_start = first_chunk[:500]
 
-            content_type = response.headers.get("content-type", "")
-            content_start = response.content[:500]
+                if "text/html" in content_type or _is_html_response(content_start):
+                    html = (first_chunk + await response.aread()).decode("utf-8", errors="ignore")
 
-            if "text/html" in content_type or _is_html_response(content_start):
-                html = response.text
+                    if "<title>Sign in" in html or "accounts.google.com" in html:
+                        raise RuntimeError(
+                            "Google Drive requires sign-in. "
+                            "Set file sharing to 'Anyone with the link'."
+                        )
 
-                if "<title>Sign in" in html or "accounts.google.com" in html:
-                    raise RuntimeError(
-                        "Google Drive requires sign-in. "
-                        "Set file sharing to 'Anyone with the link'."
-                    )
+                    if "virus scan" in html.lower() or "download-form" in html:
+                        confirmed_url = _parse_virus_scan_page(html, file_id)
+                        if confirmed_url:
+                            logger.info(f"Bypassing virus scan, downloading from: {confirmed_url}")
+                            await _stream_download(client, confirmed_url, output_path)
+                            break
 
-                if "virus scan" in html.lower() or "download-form" in html:
-                    confirmed_url = _parse_virus_scan_page(html, file_id)
-                    if confirmed_url:
-                        logger.info(f"Bypassing virus scan, downloading from: {confirmed_url}")
-                        await _stream_download(client, confirmed_url, output_path)
-                        break
-                    else:
                         logger.warning("Could not parse virus scan page, trying next URL")
                         continue
 
-                logger.warning(f"Received HTML response (not a video). Content-type: {content_type}")
-                continue
+                    logger.warning(f"Received HTML response (not a video). Content-type: {content_type}")
+                    continue
 
-            logger.info(f"Direct download succeeded, streaming to disk...")
-            with open(output_path, "wb") as f:
-                f.write(response.content)
-            break
+                logger.info("Direct download succeeded, streaming to disk...")
+                await _write_stream_to_file(output_path, byte_iter, initial_chunk=first_chunk)
+                break
         else:
             raise RuntimeError(
                 "Failed to download from Google Drive after all attempts. "
@@ -127,7 +127,8 @@ async def download_from_gdrive(url: str, timeout: float = 1800.0) -> Path:
             f"Video exceeds maximum size of {settings.max_video_size_mb} MB ({file_size_mb:.1f} MB)"
         )
 
-    content_check = output_path.read_bytes()[:500]
+    with open(output_path, "rb") as f:
+        content_check = f.read(500)
     if _is_html_response(content_check):
         output_path.unlink()
         raise RuntimeError(
@@ -143,13 +144,21 @@ async def _stream_download(client: httpx.AsyncClient, url: str, output_path: Pat
     async with client.stream("GET", url) as response:
         if response.status_code != 200:
             raise RuntimeError(f"Stream download failed with HTTP {response.status_code}")
+        byte_iter = response.aiter_bytes(chunk_size=8192 * 16)
+        first_chunk = await anext(byte_iter, b"")
+        await _write_stream_to_file(output_path, byte_iter, initial_chunk=first_chunk)
 
-        downloaded = 0
-        with open(output_path, "wb") as f:
-            async for chunk in response.aiter_bytes(chunk_size=8192 * 16):
-                f.write(chunk)
-                downloaded += len(chunk)
-                if downloaded % (50 * 1024 * 1024) < 8192 * 16:
-                    logger.info(f"Downloaded {downloaded / (1024*1024):.0f} MB...")
+
+async def _write_stream_to_file(output_path: Path, byte_iter, initial_chunk: bytes = b""):
+    downloaded = 0
+    with open(output_path, "wb") as f:
+        if initial_chunk:
+            f.write(initial_chunk)
+            downloaded += len(initial_chunk)
+        async for chunk in byte_iter:
+            f.write(chunk)
+            downloaded += len(chunk)
+            if downloaded % (50 * 1024 * 1024) < 8192 * 16:
+                logger.info(f"Downloaded {downloaded / (1024*1024):.0f} MB...")
 
     logger.info(f"Stream download complete: {downloaded / (1024*1024):.1f} MB")

@@ -21,9 +21,13 @@ class Settings(BaseSettings):
 
     # Rate limiting
     rate_limit_requests_per_minute: int = 30
+    max_concurrent_analyses: int = 2
+    max_context_summaries: int = 6
+    context_summary_max_chars: int = 1800
 
     host: str = "0.0.0.0"
     port: int = 8000
+    web_concurrency: int = 1
 
     model_config = {"env_prefix": "VA_", "env_file": ".env"}
 

@@ -15,11 +15,13 @@ from app.database import get_db
 from app.crypto import encrypt_api_key, decrypt_api_key
 from app.gdrive import download_from_gdrive
 from app.analyzer import analyze_video
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _jobs: dict[str, dict] = {}
+_analysis_semaphore = asyncio.Semaphore(max(settings.max_concurrent_analyses, 1))
 
 
 @router.post("/api/generate-token", response_model=UserTokenResponse)
@@ -100,23 +102,25 @@ async def _get_api_key(user_token: str | None, provider: str, provided_key: str 
 
 async def _run_analysis(job_id: str, req: AnalyzeRequest, api_key: str, provider: str):
     try:
-        _jobs[job_id]["status"] = "downloading"
-        video_path = await download_from_gdrive(req.google_drive_url)
+        _jobs[job_id]["status"] = "queued"
+        async with _analysis_semaphore:
+            _jobs[job_id]["status"] = "downloading"
+            video_path = await download_from_gdrive(req.google_drive_url)
 
-        _jobs[job_id]["status"] = "analyzing"
-        result = await analyze_video(
-            video_path=video_path,
-            prompt=req.prompt,
-            model=req.model,
-            api_key=api_key,
-            provider=provider,
-            strategy=req.strategy,
-            segment_start=req.segment_start,
-            segment_end=req.segment_end,
-            max_chunk_duration=req.max_chunk_duration,
-            temperature=req.temperature,
-            max_tokens=req.max_tokens,
-        )
+            _jobs[job_id]["status"] = "analyzing"
+            result = await analyze_video(
+                video_path=video_path,
+                prompt=req.prompt,
+                model=req.model,
+                api_key=api_key,
+                provider=provider,
+                strategy=req.strategy,
+                segment_start=req.segment_start,
+                segment_end=req.segment_end,
+                max_chunk_duration=req.max_chunk_duration,
+                temperature=req.temperature,
+                max_tokens=req.max_tokens,
+            )
 
         if result.get("error"):
             _jobs[job_id]["status"] = "failed"
