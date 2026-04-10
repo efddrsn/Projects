@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Video Analyzer</title>
+    <meta name="description" content="Analyze Google Drive videos with AI">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                Video Analyzer
+            </h1>
+            <button id="settingsBtn" class="icon-btn" aria-label="Settings">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+        </header>
+
+        <main>
+            <!-- Settings Panel -->
+            <div id="settingsPanel" class="panel hidden">
+                <h2>Settings</h2>
+                <div class="field">
+                    <label for="userToken">User Token</label>
+                    <div class="input-group">
+                        <input type="text" id="userToken" placeholder="Your token for API key storage" readonly>
+                        <button id="generateTokenBtn" class="btn-sm">Generate</button>
+                        <button id="copyTokenBtn" class="btn-sm">Copy</button>
+                    </div>
+                    <p class="hint">Save this token to reuse stored API keys across sessions.</p>
+                </div>
+
+                <h3>API Keys</h3>
+                <p class="hint">Keys are encrypted at rest on the server. You only need to enter each once.</p>
+
+                <div class="field">
+                    <label for="googleKey">Google AI (Gemini)</label>
+                    <div class="input-group">
+                        <input type="password" id="googleKey" placeholder="AIza...">
+                        <button class="btn-sm save-key-btn" data-provider="google">Save</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="openaiKey">OpenAI (GPT-4o)</label>
+                    <div class="input-group">
+                        <input type="password" id="openaiKey" placeholder="sk-...">
+                        <button class="btn-sm save-key-btn" data-provider="openai">Save</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="anthropicKey">Anthropic (Claude)</label>
+                    <div class="input-group">
+                        <input type="password" id="anthropicKey" placeholder="sk-ant-...">
+                        <button class="btn-sm save-key-btn" data-provider="anthropic">Save</button>
+                    </div>
+                </div>
+
+                <div id="storedKeys" class="stored-keys"></div>
+                <button id="closeSettings" class="btn btn-secondary full-width">Close Settings</button>
+            </div>
+
+            <!-- Main Form -->
+            <form id="analyzeForm">
+                <div class="field">
+                    <label for="driveUrl">Google Drive Video URL</label>
+                    <input type="url" id="driveUrl" placeholder="https://drive.google.com/file/d/..." required>
+                </div>
+
+                <div class="field">
+                    <label for="prompt">Prompt</label>
+                    <textarea id="prompt" rows="3" placeholder="What should the AI analyze in this video?" required></textarea>
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label for="model">Model</label>
+                        <select id="model">
+                            <optgroup label="Google">
+                                <option value="gemini-2.0-flash" selected>Gemini 2.0 Flash</option>
+                                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            </optgroup>
+                            <optgroup label="OpenAI">
+                                <option value="gpt-4o">GPT-4o</option>
+                                <option value="gpt-4o-mini">GPT-4o Mini</option>
+                            </optgroup>
+                            <optgroup label="Anthropic">
+                                <option value="claude-sonnet-4-20250514">Claude Sonnet</option>
+                                <option value="claude-haiku-35-20241022">Claude Haiku</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="strategy">Long Video Strategy</label>
+                        <select id="strategy">
+                            <option value="sequential_summary">Sequential Summary</option>
+                            <option value="keyframe_summary">Keyframe Summary</option>
+                            <option value="user_segments">Specific Segment</option>
+                            <option value="fail_if_too_long">Fail if Too Long</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="segmentFields" class="field-row hidden">
+                    <div class="field">
+                        <label for="segmentStart">Start (seconds)</label>
+                        <input type="number" id="segmentStart" min="0" step="1" placeholder="0">
+                    </div>
+                    <div class="field">
+                        <label for="segmentEnd">End (seconds)</label>
+                        <input type="number" id="segmentEnd" min="0" step="1" placeholder="300">
+                    </div>
+                </div>
+
+                <details class="advanced-section">
+                    <summary>Advanced Options</summary>
+                    <div class="field-row">
+                        <div class="field">
+                            <label for="temperature">Temperature</label>
+                            <input type="number" id="temperature" min="0" max="2" step="0.1" placeholder="Default">
+                        </div>
+                        <div class="field">
+                            <label for="maxTokens">Max Tokens</label>
+                            <input type="number" id="maxTokens" min="1" step="1" placeholder="Default">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="chunkDuration">Chunk Duration (seconds)</label>
+                        <input type="number" id="chunkDuration" min="30" step="30" placeholder="300">
+                    </div>
+                    <div class="field">
+                        <label for="inlineApiKey">One-time API Key (not stored)</label>
+                        <input type="password" id="inlineApiKey" placeholder="Use this key for this request only">
+                    </div>
+                </details>
+
+                <button type="submit" id="submitBtn" class="btn btn-primary full-width">
+                    <span class="btn-text">Analyze Video</span>
+                    <span class="btn-loading hidden">
+                        <svg class="spinner" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="30 70" stroke-linecap="round"/></svg>
+                        Analyzing...
+                    </span>
+                </button>
+            </form>
+
+            <!-- Status / Result -->
+            <div id="statusSection" class="hidden">
+                <div id="statusBar" class="status-bar">
+                    <div class="status-indicator"></div>
+                    <span id="statusText">Waiting...</span>
+                </div>
+            </div>
+
+            <div id="resultSection" class="hidden">
+                <h2>Analysis Result</h2>
+                <div id="resultMeta" class="result-meta"></div>
+                <div id="resultContent" class="result-content"></div>
+                <button id="copyResult" class="btn btn-secondary full-width">Copy Result</button>
+            </div>
+
+            <div id="errorSection" class="hidden">
+                <div class="error-box">
+                    <strong>Error</strong>
+                    <p id="errorText"></p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Video Analyzer &mdash; Also available as an <a href="#" id="mcpInfoLink">MCP Server</a></p>
+        </footer>
+
+        <!-- MCP Info Modal -->
+        <div id="mcpModal" class="modal hidden">
+            <div class="modal-content">
+                <h2>MCP Server Setup</h2>
+                <p>Add to your MCP client config (Claude Desktop, Cursor, etc.):</p>
+                <pre id="mcpConfig"></pre>
+                <h3>Stdio Mode (local)</h3>
+                <pre><code>{
+  "mcpServers": {
+    "video-analyzer": {
+      "command": "python",
+      "args": ["mcp_stdio.py"],
+      "cwd": "/path/to/video-analyzer/backend"
+    }
+  }
+}</code></pre>
+                <button id="closeMcpModal" class="btn btn-secondary full-width">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
