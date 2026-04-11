@@ -3,6 +3,7 @@ MCP (Model Context Protocol) server interface for Video Analyzer.
 
 Can be run standalone via stdio or as part of the HTTP server via SSE.
 """
+import asyncio
 import json
 import logging
 from typing import Any
@@ -13,6 +14,21 @@ from mcp.types import Tool, TextContent
 logger = logging.getLogger(__name__)
 
 mcp = Server("video-analyzer")
+
+ANALYZE_TIMEOUT_SECONDS = 600
+
+
+async def _send_progress(message: str) -> None:
+    """Send a log-level progress message over the MCP session if available.
+
+    This keeps the SSE connection alive during long operations so reverse
+    proxies (Railway, Cloudflare, etc.) don't kill the idle connection.
+    """
+    try:
+        ctx = mcp.request_context
+        await ctx.session.send_log_message(level="info", data=message, logger="video-analyzer")
+    except Exception:
+        logger.debug("Could not send MCP progress notification: %s", message)
 
 
 def _build_tools() -> list[Tool]:
@@ -211,27 +227,49 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                     )]
                 api_key = decrypt_api_key(row[0])
 
-            video_path = await download_from_gdrive(arguments["google_drive_url"])
+            await _send_progress("Starting video download from Google Drive...")
+            video_path = await download_from_gdrive(
+                arguments["google_drive_url"],
+                progress_callback=_send_progress,
+            )
+            await _send_progress(f"Download complete. Analyzing video with {model}...")
+
             strategy_str = arguments.get("strategy", "sequential_summary")
             strategy = LongVideoStrategy(strategy_str)
 
-            result = await analyze_video(
-                video_path=video_path,
-                prompt=arguments["prompt"],
-                model=model,
-                api_key=api_key,
-                provider=provider,
-                strategy=strategy,
-                segment_start=arguments.get("segment_start"),
-                segment_end=arguments.get("segment_end"),
-                temperature=arguments.get("temperature"),
-                max_tokens=arguments.get("max_tokens"),
+            result = await asyncio.wait_for(
+                analyze_video(
+                    video_path=video_path,
+                    prompt=arguments["prompt"],
+                    model=model,
+                    api_key=api_key,
+                    provider=provider,
+                    strategy=strategy,
+                    segment_start=arguments.get("segment_start"),
+                    segment_end=arguments.get("segment_end"),
+                    temperature=arguments.get("temperature"),
+                    max_tokens=arguments.get("max_tokens"),
+                    progress_callback=_send_progress,
+                ),
+                timeout=ANALYZE_TIMEOUT_SECONDS,
             )
 
+            await _send_progress("Analysis complete.")
             return [TextContent(type="text", text=json.dumps(result, default=str))]
 
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
+    except asyncio.TimeoutError:
+        logger.error("MCP tool timed out: %s (limit: %ds)", name, ANALYZE_TIMEOUT_SECONDS)
+        return [TextContent(
+            type="text",
+            text=f"Error: Operation timed out after {ANALYZE_TIMEOUT_SECONDS}s. "
+                 f"Try a shorter video, a segment (segment_start/segment_end), "
+                 f"or the keyframe_summary strategy.",
+        )]
+    except asyncio.CancelledError:
+        logger.warning("MCP tool cancelled: %s", name)
+        return [TextContent(type="text", text="Error: Operation was cancelled.")]
     except Exception as e:
         logger.exception(f"MCP tool error: {name}")
         return [TextContent(type="text", text=f"Error: {str(e)}")]

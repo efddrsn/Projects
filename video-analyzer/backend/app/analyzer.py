@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from pathlib import Path
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from app.models import LongVideoStrategy
 from app.video_processing import (
@@ -13,6 +13,16 @@ from app.video_processing import (
 from app.llm_providers import detect_provider, PROVIDER_HANDLERS
 
 logger = logging.getLogger(__name__)
+
+ProgressCallback = Optional[Callable[[str], Awaitable[None]]]
+
+
+async def _notify(cb: ProgressCallback, msg: str) -> None:
+    if cb:
+        try:
+            await cb(msg)
+        except Exception:
+            pass
 
 
 async def analyze_video(
@@ -27,12 +37,14 @@ async def analyze_video(
     max_chunk_duration: Optional[int] = None,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
+    progress_callback: ProgressCallback = None,
 ) -> dict:
     provider = provider or detect_provider(model)
     handler = PROVIDER_HANDLERS.get(provider)
     if not handler:
         raise ValueError(f"Unknown provider: {provider}. Use: google, openai, anthropic")
 
+    await _notify(progress_callback, "Probing video metadata...")
     info = await asyncio.to_thread(get_video_info, video_path)
     limits = get_model_limits(model)
     max_duration = limits["max_duration_seconds"]
@@ -49,6 +61,7 @@ async def analyze_video(
 
     if effective_duration <= max_duration and supports_video:
         if segment_start is not None or segment_end is not None:
+            await _notify(progress_callback, "Trimming video segment...")
             chunks = await asyncio.to_thread(
                 split_video_into_chunks,
                 video_path,
@@ -61,6 +74,7 @@ async def analyze_video(
         else:
             video_to_send = video_path
 
+        await _notify(progress_callback, f"Sending video to {model} for analysis...")
         result = await handler(
             api_key=api_key, model=model, prompt=prompt,
             video_path=video_to_send, temperature=temperature, max_tokens=max_tokens,
@@ -93,12 +107,14 @@ async def analyze_video(
         return await _keyframe_strategy(
             video_path, prompt, model, api_key, provider, handler,
             segment_start, segment_end, temperature, max_tokens,
+            progress_callback,
         )
 
     return await _sequential_summary_strategy(
         video_path, prompt, model, api_key, provider, handler,
         max_chunk_duration or min(max_duration, 300),
         segment_start, segment_end, temperature, max_tokens, supports_video,
+        progress_callback,
     )
 
 
@@ -106,11 +122,13 @@ async def _sequential_summary_strategy(
     video_path, prompt, model, api_key, provider, handler,
     chunk_duration, segment_start, segment_end,
     temperature, max_tokens, supports_video,
+    progress_callback: ProgressCallback = None,
 ):
     """
     Process each chunk, carry forward accumulated context, then synthesize.
     Each chunk sees: original prompt + all prior chunk summaries, ensuring full context coverage.
     """
+    await _notify(progress_callback, "Splitting video into chunks...")
     chunks = await asyncio.to_thread(
         split_video_into_chunks,
         video_path,
@@ -119,8 +137,10 @@ async def _sequential_summary_strategy(
         segment_start,
         segment_end,
     )
+    await _notify(progress_callback, f"Video split into {len(chunks)} chunk(s)")
 
     if len(chunks) == 1:
+        await _notify(progress_callback, f"Analyzing single chunk with {model}...")
         if supports_video:
             result = await handler(
                 api_key=api_key, model=model, prompt=prompt,
@@ -138,6 +158,12 @@ async def _sequential_summary_strategy(
     chunk_summaries = []
 
     for chunk in chunks:
+        await _notify(
+            progress_callback,
+            f"Analyzing chunk {chunk.index + 1}/{chunk.total_chunks} "
+            f"({chunk.start_time:.0f}s–{chunk.end_time:.0f}s)...",
+        )
+
         context_header = (
             f"You are analyzing part {chunk.index + 1} of {chunk.total_chunks} "
             f"of a video (time {chunk.start_time:.0f}s - {chunk.end_time:.0f}s).\n\n"
@@ -169,6 +195,8 @@ async def _sequential_summary_strategy(
         chunk_summaries.append(summary)
         logger.info(f"Chunk {chunk.index + 1}/{chunk.total_chunks} analyzed")
 
+    await _notify(progress_callback, "Synthesizing final analysis from all chunks...")
+
     synthesis_prompt = (
         f"You analyzed a video in {len(chunks)} parts. "
         f"Below are your detailed analyses of each part.\n\n"
@@ -183,17 +211,10 @@ async def _sequential_summary_strategy(
         f"Ensure you cover the entire video, not just individual parts. Reference specific timestamps."
     )
 
-    # The synthesis call is text-only: all visual info is in the chunk summaries
-    if supports_video:
-        final_result = await handler(
-            api_key=api_key, model=model, prompt=synthesis_prompt,
-            temperature=temperature, max_tokens=max_tokens,
-        )
-    else:
-        final_result = await handler(
-            api_key=api_key, model=model, prompt=synthesis_prompt,
-            temperature=temperature, max_tokens=max_tokens,
-        )
+    final_result = await handler(
+        api_key=api_key, model=model, prompt=synthesis_prompt,
+        temperature=temperature, max_tokens=max_tokens,
+    )
 
     return {
         "result": final_result,
@@ -206,9 +227,12 @@ async def _sequential_summary_strategy(
 async def _keyframe_strategy(
     video_path, prompt, model, api_key, provider, handler,
     segment_start, segment_end, temperature, max_tokens,
+    progress_callback: ProgressCallback = None,
 ):
     """Extract keyframes from the entire video and send as images."""
+    await _notify(progress_callback, "Extracting keyframes from video...")
     kf = await asyncio.to_thread(extract_keyframes, video_path, 30)
+    await _notify(progress_callback, f"Extracted {len(kf.frames)} keyframes, sending to {model}...")
 
     keyframe_prompt = (
         f"These are {len(kf.frames)} keyframes extracted from a video at regular intervals.\n\n"

@@ -2,9 +2,13 @@ import re
 import httpx
 import logging
 from pathlib import Path
+from typing import Awaitable, Callable, Optional
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+ProgressCallback = Optional[Callable[[str], Awaitable[None]]]
 
 
 def extract_file_id(url: str) -> str:
@@ -45,7 +49,11 @@ def _is_html_response(content_start: bytes) -> bool:
            content_start.lstrip()[:6].lower().startswith(b"<html")
 
 
-async def download_from_gdrive(url: str, timeout: float = 1800.0) -> Path:
+async def download_from_gdrive(
+    url: str,
+    timeout: float = 1800.0,
+    progress_callback: ProgressCallback = None,
+) -> Path:
     """Download a video file from Google Drive.
 
     Handles:
@@ -58,7 +66,10 @@ async def download_from_gdrive(url: str, timeout: float = 1800.0) -> Path:
     output_path = settings.temp_dir / f"{file_id}.mp4"
 
     if output_path.exists() and output_path.stat().st_size > 10_000:
-        logger.info(f"Using cached file: {output_path} ({output_path.stat().st_size / (1024*1024):.1f} MB)")
+        cached_mb = output_path.stat().st_size / (1024 * 1024)
+        logger.info(f"Using cached file: {output_path} ({cached_mb:.1f} MB)")
+        if progress_callback:
+            await progress_callback(f"Using cached video ({cached_mb:.1f} MB)")
         return output_path
 
     if output_path.exists():
@@ -96,7 +107,9 @@ async def download_from_gdrive(url: str, timeout: float = 1800.0) -> Path:
                         confirmed_url = _parse_virus_scan_page(html, file_id)
                         if confirmed_url:
                             logger.info(f"Bypassing virus scan, downloading from: {confirmed_url}")
-                            await _stream_download(client, confirmed_url, output_path)
+                            if progress_callback:
+                                await progress_callback("Large file detected, bypassing virus scan...")
+                            await _stream_download(client, confirmed_url, output_path, progress_callback)
                             break
 
                         logger.warning("Could not parse virus scan page, trying next URL")
@@ -106,7 +119,7 @@ async def download_from_gdrive(url: str, timeout: float = 1800.0) -> Path:
                     continue
 
                 logger.info("Direct download succeeded, streaming to disk...")
-                await _write_stream_to_file(output_path, byte_iter, initial_chunk=first_chunk)
+                await _write_stream_to_file(output_path, byte_iter, initial_chunk=first_chunk, progress_callback=progress_callback)
                 break
         else:
             raise RuntimeError(
@@ -140,18 +153,29 @@ async def download_from_gdrive(url: str, timeout: float = 1800.0) -> Path:
     return output_path
 
 
-async def _stream_download(client: httpx.AsyncClient, url: str, output_path: Path):
+async def _stream_download(
+    client: httpx.AsyncClient,
+    url: str,
+    output_path: Path,
+    progress_callback: ProgressCallback = None,
+):
     """Stream a large file download to disk to avoid memory issues."""
     async with client.stream("GET", url) as response:
         if response.status_code != 200:
             raise RuntimeError(f"Stream download failed with HTTP {response.status_code}")
         byte_iter = response.aiter_bytes(chunk_size=8192 * 16)
         first_chunk = await anext(byte_iter, b"")
-        await _write_stream_to_file(output_path, byte_iter, initial_chunk=first_chunk)
+        await _write_stream_to_file(output_path, byte_iter, initial_chunk=first_chunk, progress_callback=progress_callback)
 
 
-async def _write_stream_to_file(output_path: Path, byte_iter, initial_chunk: bytes = b""):
+async def _write_stream_to_file(
+    output_path: Path,
+    byte_iter,
+    initial_chunk: bytes = b"",
+    progress_callback: ProgressCallback = None,
+):
     downloaded = 0
+    last_progress_mb = 0
     with open(output_path, "wb") as f:
         if initial_chunk:
             f.write(initial_chunk)
@@ -159,7 +183,14 @@ async def _write_stream_to_file(output_path: Path, byte_iter, initial_chunk: byt
         async for chunk in byte_iter:
             f.write(chunk)
             downloaded += len(chunk)
-            if downloaded % (50 * 1024 * 1024) < 8192 * 16:
-                logger.info(f"Downloaded {downloaded / (1024*1024):.0f} MB...")
+            current_mb = downloaded // (1024 * 1024)
+            if current_mb >= last_progress_mb + 50:
+                last_progress_mb = current_mb
+                logger.info(f"Downloaded {current_mb} MB...")
+                if progress_callback:
+                    await progress_callback(f"Downloading... {current_mb} MB")
 
-    logger.info(f"Stream download complete: {downloaded / (1024*1024):.1f} MB")
+    final_mb = downloaded / (1024 * 1024)
+    logger.info(f"Stream download complete: {final_mb:.1f} MB")
+    if progress_callback:
+        await progress_callback(f"Download complete: {final_mb:.1f} MB")
