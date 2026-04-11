@@ -10,6 +10,10 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+FFPROBE_TIMEOUT = 30
+FFMPEG_CHUNK_TIMEOUT = 300
+FFMPEG_KEYFRAME_TIMEOUT = 120
+
 
 @dataclass
 class VideoInfo:
@@ -38,13 +42,17 @@ class KeyframeSet:
 
 
 def get_video_info(video_path: Path) -> VideoInfo:
-    result = subprocess.run(
-        [
-            "ffprobe", "-v", "quiet", "-print_format", "json",
-            "-show_streams", "-show_format", str(video_path),
-        ],
-        capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet", "-print_format", "json",
+                "-show_streams", "-show_format", str(video_path),
+            ],
+            capture_output=True, text=True,
+            timeout=FFPROBE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"ffprobe timed out after {FFPROBE_TIMEOUT}s — file may be corrupt or very large")
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed: {result.stderr}")
 
@@ -93,27 +101,44 @@ def split_video_into_chunks(
         chunk_path = chunk_dir / f"chunk_{index:04d}.mp4"
 
         if not chunk_path.exists():
-            # Try stream copy first for speed and zero quality loss; fall back to re-encode for compatibility.
-            copy_result = subprocess.run(
-                [
-                    "ffmpeg", "-y", "-ss", str(current), "-i", str(video_path),
-                    "-t", str(chunk_end - current),
-                    "-c", "copy", "-movflags", "+faststart",
-                    str(chunk_path),
-                ],
-                capture_output=True,
-            )
-            if copy_result.returncode != 0 or not chunk_path.exists() or chunk_path.stat().st_size == 0:
-                subprocess.run(
-                [
-                    "ffmpeg", "-y", "-ss", str(current), "-i", str(video_path),
-                    "-t", str(chunk_end - current),
-                    "-c:v", "libx264", "-preset", "ultrafast",
-                    "-c:a", "aac", "-movflags", "+faststart",
-                    str(chunk_path),
-                ],
-                capture_output=True,
+            try:
+                copy_result = subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-ss", str(current), "-i", str(video_path),
+                        "-t", str(chunk_end - current),
+                        "-c", "copy", "-movflags", "+faststart",
+                        str(chunk_path),
+                    ],
+                    capture_output=True,
+                    timeout=FFMPEG_CHUNK_TIMEOUT,
                 )
+            except subprocess.TimeoutExpired:
+                logger.warning("ffmpeg stream-copy timed out for chunk %d, trying re-encode", index)
+                copy_result = None
+
+            needs_reencode = (
+                copy_result is None
+                or copy_result.returncode != 0
+                or not chunk_path.exists()
+                or chunk_path.stat().st_size == 0
+            )
+            if needs_reencode:
+                try:
+                    subprocess.run(
+                        [
+                            "ffmpeg", "-y", "-ss", str(current), "-i", str(video_path),
+                            "-t", str(chunk_end - current),
+                            "-c:v", "libx264", "-preset", "ultrafast",
+                            "-c:a", "aac", "-movflags", "+faststart",
+                            str(chunk_path),
+                        ],
+                        capture_output=True,
+                        timeout=FFMPEG_CHUNK_TIMEOUT,
+                    )
+                except subprocess.TimeoutExpired:
+                    raise RuntimeError(
+                        f"ffmpeg timed out after {FFMPEG_CHUNK_TIMEOUT}s encoding chunk {index}"
+                    )
 
         chunks.append(VideoChunk(
             path=chunk_path,
@@ -138,15 +163,19 @@ def extract_keyframes(video_path: Path, max_frames: int = 30) -> KeyframeSet:
     frame_dir = settings.temp_dir / f"{video_path.stem}_frames"
     frame_dir.mkdir(parents=True, exist_ok=True)
 
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", str(video_path),
-            "-vf", f"fps=1/{interval},scale=1280:-2",
-            "-q:v", "3",
-            str(frame_dir / "frame_%04d.jpg"),
-        ],
-        capture_output=True,
-    )
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(video_path),
+                "-vf", f"fps=1/{interval},scale=1280:-2",
+                "-q:v", "3",
+                str(frame_dir / "frame_%04d.jpg"),
+            ],
+            capture_output=True,
+            timeout=FFMPEG_KEYFRAME_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("Keyframe extraction timed out after %ds, using frames extracted so far", FFMPEG_KEYFRAME_TIMEOUT)
 
     frames = []
     timestamps = []
